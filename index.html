@@ -219,6 +219,7 @@
             <div>
                 <h1 class="text-2xl font-bold text-slate-800 dark:text-white tracking-tight">Logística <span class="text-blue-600">Pro</span></h1>
                 <p id="modeIndicator" class="text-xs font-bold uppercase tracking-widest text-slate-400 dark:text-slate-500 mt-1">Modo: Registro de Saída</p>
+                <span id="cloudStatus" class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-700 mt-2 inline-block">Conectando Servidor...</span>
             </div>
             <button onclick="window.resetEverything()" class="p-2 text-slate-400 hover:text-red-500 dark:hover:text-red-400 transition-colors">
                 <i class="fas fa-sign-out-alt text-2xl"></i>
@@ -228,7 +229,7 @@
         <div id="userSection" class="bg-blue-600 rounded-2xl p-6 shadow-lg text-white mb-6 transition-all hidden">
             <div class="flex justify-between items-start mb-4">
                 <div>
-                    <span class="text-blue-100 text-xs font-bold uppercase tracking-wider">Lote Atual com:</span>
+                    <span class="text-blue-100 text-xs font-bold uppercase tracking-wider">Usuário Atual:</span>
                     <h2 id="currentUserName" class="text-2xl font-bold italic">Nenhum</h2>
                 </div>
                 <button onclick="window.finalizeBatch()" class="bg-white text-blue-600 px-4 py-2 rounded-xl font-bold text-sm shadow-md hover:bg-blue-50 transition-all">
@@ -268,6 +269,7 @@
             </div>
         </div>
 
+        <!-- Câmera Estável Quadrada -->
         <div id="cameraContainer" class="hidden mb-6 mx-auto w-full max-w-[300px] aspect-square bg-black rounded-2xl overflow-hidden shadow-2xl relative flex items-center justify-center">
             <video id="readerVideo" class="w-full h-full object-cover scale-105" autoplay muted playsinline></video>
             
@@ -312,11 +314,11 @@
 
         <div class="bg-white dark:bg-zinc-900 rounded-2xl shadow-sm border border-gray-200 dark:border-zinc-700 overflow-hidden transition-colors">
             <div class="p-4 bg-slate-50 dark:bg-zinc-800 border-b border-gray-200 dark:border-zinc-700 flex justify-between items-center transition-colors">
-                <span class="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Registros (Nuvem)</span>
+                <span class="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Registros</span>
                 <span id="listCount" class="text-xs font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 px-2 py-1 rounded">0 itens</span>
             </div>
             <div id="packageList" class="divide-y divide-gray-100 dark:divide-zinc-800 max-h-[400px] overflow-y-auto">
-                <p class="p-12 text-center text-slate-400 dark:text-slate-500 italic">Lista vazia. Conectando ao servidor...</p>
+                <p class="p-12 text-center text-slate-400 dark:text-slate-500 italic">Lista vazia.</p>
             </div>
         </div>
     </main>
@@ -332,7 +334,7 @@
             
             <div class="flex justify-between items-center mb-4 border-b border-gray-200 dark:border-zinc-700 pb-4">
                 <h3 class="text-lg font-bold text-gray-800 dark:text-white flex items-center gap-2">
-                    <i class="fas fa-calendar-day text-green-500"></i> Histórico (Nuvem)
+                    <i class="fas fa-calendar-day text-green-500"></i> Histórico do Dia
                 </h3>
                 <button onclick="window.closeHistoryModal()" class="text-gray-400 hover:text-red-500 dark:hover:text-red-400 transition-colors">
                     <i class="fas fa-times text-xl"></i>
@@ -384,13 +386,18 @@
         let currentUser = null;
         let pacotesRef = null;
         let zapHistoryRef = null;
+        const cloudStatus = document.getElementById('cloudStatus');
 
-        // Autenticação Silenciosa Inicial
         const initAuth = async () => {
-            if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                await signInWithCustomToken(auth, __initial_auth_token);
-            } else {
-                await signInAnonymously(auth);
+            try {
+                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                    await signInWithCustomToken(auth, __initial_auth_token);
+                } else {
+                    await signInAnonymously(auth);
+                }
+            } catch(e) {
+                cloudStatus.innerText = "Modo Offline (Sem Conexão)";
+                cloudStatus.className = "text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-100 text-red-700 mt-2 inline-block";
             }
         };
         initAuth();
@@ -505,7 +512,7 @@
         };
 
         // ==========================================
-        // ZAP SEM ADD + FIREBASE
+        // ZAP SEM ADD + FIREBASE OTIMIZADO
         // ==========================================
         let zapHistory = [];
         const phoneInput = document.getElementById('phoneInput');
@@ -568,18 +575,18 @@
         };
 
         async function saveToHistory(number, stop) {
-            if (!currentUser || !zapHistoryRef) return;
+            // Salva Localmente (Optimistic)
             const today = new Date().toLocaleDateString('pt-BR');
-            const docId = `${number}_${today.replace(/\//g, '-')}`;
+            const newHistoryItem = { phone: number, stop: stop, date: today, timestamp: Date.now() };
             
-            try {
-                await setDoc(doc(zapHistoryRef, docId), {
-                    phone: number,
-                    stop: stop,
-                    date: today,
-                    timestamp: Date.now()
-                });
-            } catch(e) { console.error("Erro salvando histórico Zap", e); }
+            zapHistory = zapHistory.filter(item => !(item.phone === number && item.date === today));
+            zapHistory.unshift(newHistoryItem);
+            
+            // Backup no Firebase no plano de fundo
+            if (currentUser && zapHistoryRef) {
+                const docId = `${number}_${today.replace(/\//g, '-')}`;
+                setDoc(doc(zapHistoryRef, docId), newHistoryItem).catch(e=>console.log(e));
+            }
         }
 
         window.openHistoryModal = function() { 
@@ -621,13 +628,17 @@
 
         window.clearDailyHistory = async function() {
             if(confirm("Deseja apagar todo o histórico de HOJE?")) {
-                if(!zapHistoryRef) return;
                 const today = new Date().toLocaleDateString('pt-BR');
                 const todaysCalls = zapHistory.filter(item => item.date === today);
-                
-                for (const item of todaysCalls) {
-                    const docId = `${item.phone}_${today.replace(/\//g, '-')}`;
-                    await deleteDoc(doc(zapHistoryRef, docId));
+                zapHistory = zapHistory.filter(item => item.date !== today); // Apaga local
+                renderHistoryList();
+
+                // Apaga no Firebase
+                if(zapHistoryRef) {
+                    for (const item of todaysCalls) {
+                        const docId = `${item.phone}_${today.replace(/\//g, '-')}`;
+                        deleteDoc(doc(zapHistoryRef, docId)).catch(e=>{});
+                    }
                 }
             }
         };
@@ -668,7 +679,7 @@
         };
 
         // ==========================================
-        // SCAN PCT + FIREBASE
+        // SCAN PCT + FIREBASE OTIMIZADO (Optimistic UI)
         // ==========================================
         let allPackages = [];
         let currentBatchUser = null;
@@ -687,13 +698,13 @@
         const modeIndicator = document.getElementById('modeIndicator');
         const cameraContainer = document.getElementById('cameraContainer');
 
-        // Escutador principal do Firebase quando o usuario estiver logado
         onAuthStateChanged(auth, user => {
             currentUser = user;
             if (user) {
-                // Public Data = Pacotes Logística
+                cloudStatus.innerText = "Nuvem Conectada (Online)";
+                cloudStatus.className = "text-[10px] font-bold px-2 py-0.5 rounded-full bg-green-100 text-green-700 mt-2 inline-block";
+                
                 pacotesRef = collection(db, 'artifacts', appId, 'public', 'data', 'pacotes');
-                // Private Data = Histórico do Zap
                 zapHistoryRef = collection(db, 'artifacts', appId, 'users', user.uid, 'zap_history');
                 
                 onSnapshot(pacotesRef, (snapshot) => {
@@ -714,8 +725,6 @@
                     if (!historyModal.classList.contains('hidden')) {
                         renderHistoryList();
                     }
-                }, (error) => {
-                    console.error("Erro Firebase Zap History:", error);
                 });
             }
         });
@@ -771,8 +780,9 @@
         barcodeInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') window.handleManualInput(); });
 
         async function processCode(code) {
-            if (!code || !currentUser || !pacotesRef) return;
+            if (!code) return;
             
+            // Aceita letras, números, hífens e pontos
             if (!/^[A-Za-z0-9\-_.]+$/.test(code)) {
                 window.showToast("Caracteres inválidos detectados!", "bg-orange-500", "fa-exclamation-triangle");
                 if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
@@ -780,47 +790,61 @@
                 return;
             }
 
-            const docRef = doc(pacotesRef, code);
+            let isReturn = false;
+            let pkgData = null;
 
-            try {
-                if (isConferenceMode) {
-                    const pkg = allPackages.find(p => p.id === code);
-                    if (pkg) {
-                        if (pkg.status === 'done') {
-                            window.showToast("Este item já foi devolvido.", "bg-yellow-500", "fa-exclamation-triangle");
-                            playBeep(false);
-                        } else {
-                            await setDoc(docRef, { status: 'done', time: "Devolvido às " + new Date().toLocaleTimeString() }, { merge: true });
-                            window.showToast("Devolução OK: " + code, "bg-green-600", "fa-check");
-                            playBeep(true);
-                        }
+            // 1. Processamento Lógico Imediato
+            if (isConferenceMode) {
+                const pkgIndex = allPackages.findIndex(p => p.id === code);
+                if (pkgIndex !== -1) {
+                    if (allPackages[pkgIndex].status === 'done') {
+                        window.showToast("Este item já foi devolvido.", "bg-yellow-500", "fa-exclamation-triangle");
+                        playBeep(false);
+                        return;
                     } else {
-                        await setDoc(docRef, { id: code, user: 'EXTRA', status: 'extra', time: new Date().toLocaleTimeString(), timestamp: Date.now() });
-                        window.showToast("Pacote EXTRA detectado!", "bg-purple-600", "fa-star");
-                        playBeep(true); 
+                        pkgData = { ...allPackages[pkgIndex], status: 'done', time: "Devolvido às " + new Date().toLocaleTimeString() };
+                        allPackages[pkgIndex] = pkgData; // Atualiza local
+                        isReturn = true;
                     }
                 } else {
-                    if (!currentBatchUser) return;
-                    if (allPackages.some(p => p.id === code)) {
-                        window.showToast("Código já registrado nesta lista.", "bg-yellow-500", "fa-exclamation-triangle");
-                        playBeep(false);
-                    } else {
-                        await setDoc(docRef, { id: code, user: currentBatchUser, status: 'out', time: new Date().toLocaleTimeString(), timestamp: Date.now() });
-                        window.showToast("Adicionado: " + code, "bg-blue-600", "fa-plus");
-                        playBeep(true); 
-                    }
+                    pkgData = { id: code, user: currentBatchUser || 'EXTRA', status: 'extra', time: new Date().toLocaleTimeString(), timestamp: Date.now() };
+                    allPackages.unshift(pkgData); // Adiciona Extra local
                 }
-            } catch(e) {
-                console.error("Erro salvando pacote:", e);
-                window.showToast("Erro ao comunicar com o servidor.", "bg-red-500");
-                playBeep(false);
+            } else {
+                if (!currentBatchUser) return;
+                if (allPackages.some(p => p.id === code)) {
+                    window.showToast("Código já registrado nesta lista.", "bg-yellow-500", "fa-exclamation-triangle");
+                    playBeep(false);
+                    return;
+                } else {
+                    pkgData = { id: code, user: currentBatchUser, status: 'out', time: new Date().toLocaleTimeString(), timestamp: Date.now() };
+                    allPackages.unshift(pkgData); // Adiciona Local
+                }
             }
+
+            // 2. Feedback Visual e Sonoro Imediato
+            updateScanUI();
+            if (isConferenceMode) {
+                window.showToast(isReturn ? `Devolução OK: ${code}` : "Pacote EXTRA detectado!", isReturn ? "bg-green-600" : "bg-purple-600", isReturn ? "fa-check" : "fa-star");
+            } else {
+                window.showToast("Adicionado: " + code, "bg-blue-600", "fa-plus");
+            }
+            playBeep(true);
             if (navigator.vibrate) navigator.vibrate(50);
+
+            // 3. Sincronização no Background com Firebase
+            if (currentUser && pacotesRef && pkgData) {
+                try {
+                    await setDoc(doc(pacotesRef, code), pkgData, { merge: true });
+                } catch(e) {
+                    console.error("Erro salvando no Firebase:", e);
+                }
+            }
         }
 
         function updateScanUI() {
             if (allPackages.length === 0) {
-                listContainer.innerHTML = `<p class="p-12 text-center text-slate-400 dark:text-slate-500 italic">Nenhum pacote no sistema.</p>`;
+                listContainer.innerHTML = `<p class="p-12 text-center text-slate-400 dark:text-slate-500 italic">Lista vazia.</p>`;
             } else {
                 listContainer.innerHTML = allPackages.map(p => {
                     let statusClass = "bg-slate-100 dark:bg-zinc-800 text-slate-500 dark:text-gray-300";
@@ -871,8 +895,6 @@
                 const lines = ev.target.result.split('\n');
                 if (lines[0].trim() !== "LOGISTICA_PRO_V1") return window.showToast("Arquivo incompatível!", "bg-red-500", "fa-times-circle");
 
-                if (!currentUser || !pacotesRef) return window.showToast("Banco de dados desconectado", "bg-red-500");
-
                 const newPackages = [];
                 for (let i = 1; i < lines.length; i++) {
                     const line = lines[i].trim();
@@ -882,10 +904,16 @@
                 }
 
                 if (newPackages.length > 0) {
-                    window.showToast("Enviando para nuvem...", "bg-blue-600", "fa-cloud-upload-alt");
+                    window.showToast("Carregando itens...", "bg-blue-600", "fa-cloud-upload-alt");
                     
-                    for (const pkg of newPackages) {
-                        await setDoc(doc(pacotesRef, pkg.id), pkg, { merge: true });
+                    // Sincroniza com Firebase se conectado
+                    if (currentUser && pacotesRef) {
+                        for (const pkg of newPackages) {
+                            setDoc(doc(pacotesRef, pkg.id), pkg, { merge: true }).catch(e=>{});
+                        }
+                    } else {
+                        // Modo offline: apenas mescla localmente
+                        allPackages = newPackages;
                     }
 
                     isConferenceMode = true;
@@ -894,13 +922,14 @@
                     currentBatchUser = null;
                     userSection.classList.add('hidden');
                     startSection.classList.remove('hidden');
+                    updateScanUI();
                     window.showToast("Importação finalizada!", "bg-green-600", "fa-check");
                 }
             };
             reader.readAsText(file);
         };
 
-        // ZXing Camera Control Avançado
+        // ZXing Camera Control Mais Estável
         window.toggleCamera = async function() {
             initAudio();
             try {
@@ -912,38 +941,44 @@
                 document.getElementById('camBtnText').innerText = "Iniciando...";
                 cameraContainer.classList.remove('hidden');
                 
-                const hints = new Map();
-                hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [
-                    ZXing.BarcodeFormat.CODE_128,
-                    ZXing.BarcodeFormat.CODE_39,
-                    ZXing.BarcodeFormat.EAN_13,
-                    ZXing.BarcodeFormat.QR_CODE,
-                    ZXing.BarcodeFormat.ITF
-                ]);
-
                 if (!codeReader) {
-                    codeReader = new ZXing.BrowserMultiFormatReader(hints);
+                    codeReader = new ZXing.BrowserMultiFormatReader();
                 }
 
-                const constraints = {
-                    video: {
-                        facingMode: { ideal: "environment" },
-                        width: { ideal: 1280 },
-                        height: { ideal: 720 }
-                    }
-                };
+                const videoInputDevices = await codeReader.listVideoInputDevices();
+                
+                if (videoInputDevices && videoInputDevices.length > 0) {
+                    const select = document.getElementById('camSelect');
+                    select.classList.remove('hidden');
+                    
+                    let selectedDeviceId = videoInputDevices[0].deviceId;
+                    // Procura preferencialmente câmera traseira
+                    const backCamera = videoInputDevices.find(d => d.label.toLowerCase().includes('back') || d.label.toLowerCase().includes('traseira') || d.label.toLowerCase().includes('environment'));
+                    if (backCamera) selectedDeviceId = backCamera.deviceId;
 
-                startScanning(constraints);
+                    select.innerHTML = videoInputDevices.map(d => `<option value="${d.deviceId}">${d.label || 'Câmera ' + d.deviceId}</option>`).join('');
+                    select.value = selectedDeviceId;
+
+                    startScanning(selectedDeviceId);
+
+                    select.onchange = () => {
+                        codeReader.reset();
+                        startScanning(select.value);
+                    };
+                } else {
+                    window.showToast("Nenhuma câmera detectada.", "bg-red-500", "fa-video-slash");
+                    window.stopCamera();
+                }
 
             } catch (err) {
                 console.error("Erro câmera:", err);
-                window.showToast("Câmera bloqueada ou não encontrada.", "bg-red-500", "fa-video-slash");
+                window.showToast("Câmera bloqueada ou indisponível.", "bg-red-500", "fa-video-slash");
                 window.stopCamera();
             }
         };
 
-        function startScanning(constraints) {
-            codeReader.decodeFromConstraints(constraints, 'readerVideo', (result, err) => {
+        function startScanning(deviceId) {
+            codeReader.decodeFromVideoDevice(deviceId, 'readerVideo', (result, err) => {
                 if (result) {
                     const code = result.getText();
                     const now = Date.now();
@@ -954,24 +989,8 @@
                         processCode(code);
                     }
                 }
-            }).then(() => {
-                setTimeout(() => {
-                    const videoEl = document.getElementById('readerVideo');
-                    if (videoEl && videoEl.srcObject) {
-                        const track = videoEl.srcObject.getVideoTracks()[0];
-                        const capabilities = track.getCapabilities();
-                        if (capabilities && capabilities.zoom) {
-                            const zoomValue = Math.min(2.0, capabilities.zoom.max);
-                            track.applyConstraints({
-                                advanced: [{ zoom: zoomValue }]
-                            }).catch(e => console.log("Zoom nativo ignorado"));
-                        }
-                    }
-                }, 500);
             }).catch(err => {
-                console.error("Erro no feed da câmera:", err);
-                window.showToast("Erro ao abrir feed da câmera.", "bg-red-500", "fa-video-slash");
-                window.stopCamera();
+                // Erros contínuos de NotFoundException são normais enquanto ele não acha o código, apenas ignoramos.
             });
 
             isCameraActive = true;
@@ -988,10 +1007,10 @@
 
         window.resetEverything = async function() {
             if (confirm("Apagar toda a operação do servidor e reiniciar do zero?")) {
-                if(pacotesRef) {
+                if(currentUser && pacotesRef) {
                     window.showToast("Limpando banco de dados...", "bg-blue-600");
                     for (const pkg of allPackages) {
-                        await deleteDoc(doc(pacotesRef, pkg.id));
+                        deleteDoc(doc(pacotesRef, pkg.id)).catch(e=>{});
                     }
                 }
                 
