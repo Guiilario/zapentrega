@@ -221,7 +221,7 @@
         <header class="flex justify-between items-center mb-6 bg-white dark:bg-zinc-900 p-6 rounded-2xl shadow-sm border border-gray-200 dark:border-zinc-700 transition-colors">
             <div>
                 <h1 class="text-2xl font-bold text-slate-800 dark:text-white tracking-tight">Logística <span class="text-blue-600">Pro</span></h1>
-                <p id="modeIndicator" class="text-xs font-bold uppercase tracking-widest text-slate-400 dark:text-slate-500 mt-1">Modo: Registro de Saída</p>
+                <p id="modeIndicator" class="text-xs font-bold uppercase tracking-widest text-slate-400 dark:text-slate-500 mt-1">Modo: Aguardando Operação</p>
                 <span id="cloudStatus" class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-700 mt-2 inline-block">Conectando Servidor...</span>
             </div>
             <button onclick="window.resetEverything()" class="p-2 text-slate-400 hover:text-red-500 dark:hover:text-red-400 transition-colors">
@@ -229,6 +229,7 @@
             </button>
         </header>
 
+        <!-- Container do Usuário Ativo -->
         <div id="userSection" class="bg-blue-600 rounded-2xl p-6 shadow-lg text-white mb-6 transition-all hidden">
             <div class="flex justify-between items-start mb-4">
                 <div>
@@ -253,12 +254,13 @@
             </button>
         </div>
 
+        <!-- Container para Iniciar Lote -->
         <div id="startSection" class="bg-white dark:bg-zinc-900 rounded-2xl p-8 shadow-sm border border-gray-200 dark:border-zinc-700 text-center transition-colors">
             <div class="mb-4 bg-blue-50 dark:bg-blue-900/30 w-16 h-16 rounded-full flex items-center justify-center mx-auto text-blue-600 dark:text-blue-400">
                 <i class="fas fa-box-open text-2xl"></i>
             </div>
             <h3 class="text-xl font-bold text-slate-800 dark:text-white">Operação de Lote</h3>
-            <p class="text-slate-500 dark:text-slate-400 mb-6">Inicie uma nova bipagem ou processe devoluções.</p>
+            <p class="text-slate-500 dark:text-slate-400 mb-6">Digite um nome de utilizador para iniciar as operações.</p>
             <input type="text" id="newUserName" placeholder="Nome do Usuário / Entregador" 
                    class="w-full p-4 mb-4 border border-gray-200 dark:border-zinc-700 bg-gray-50 dark:bg-zinc-800 text-gray-900 dark:text-white rounded-2xl text-center text-lg focus:ring-2 focus:ring-blue-500 outline-none transition-colors">
             
@@ -272,12 +274,11 @@
             </div>
         </div>
 
-        <!-- Câmera Clássica (html5-qr-code) -->
-        <div id="cameraContainer" class="hidden mb-6 bg-black rounded-2xl overflow-hidden shadow-2xl relative min-h-[300px] flex items-center justify-center">
-            <div id="reader" class="w-full h-full"></div>
+        <!-- Câmera Scanner Padrão Otimizada -->
+        <div id="cameraContainer" class="hidden mb-6 bg-black rounded-2xl overflow-hidden shadow-2xl relative">
+            <div id="reader" class="w-full"></div>
             
-            <div class="absolute top-4 right-4 z-20 flex gap-2 pointer-events-auto">
-                <select id="camSelect" class="bg-black/60 text-white text-xs p-2 rounded-lg border border-white/20 outline-none hidden"></select>
+            <div class="absolute top-2 right-2 z-20 flex gap-2 pointer-events-auto">
                 <button onclick="window.stopCamera()" class="bg-red-500/90 hover:bg-red-500 text-white w-10 h-10 rounded-full flex items-center justify-center transition-colors shadow-lg border border-red-400 focus:outline-none">
                     <i class="fas fa-times"></i>
                 </button>
@@ -400,7 +401,7 @@
         initAuth();
 
         // ==========================================
-        // ÁUDIO (BIPE) - Ativado no clique
+        // ÁUDIO (BIPE)
         // ==========================================
         window.globalAudioCtx = null;
         
@@ -418,31 +419,34 @@
 
         window.playBeep = function(isSuccess = true) {
             try {
+                if (!window.globalAudioCtx) {
+                    window.initAudio();
+                }
                 if (!window.globalAudioCtx) return;
+                
                 const osc = window.globalAudioCtx.createOscillator();
                 const gainNode = window.globalAudioCtx.createGain();
                 
                 if (isSuccess) {
                     osc.type = 'square';
-                    osc.frequency.setValueAtTime(2000, window.globalAudioCtx.currentTime);
-                    gainNode.gain.setValueAtTime(0.8, window.globalAudioCtx.currentTime); 
-                    gainNode.gain.exponentialRampToValueAtTime(0.01, window.globalAudioCtx.currentTime + 0.15);
+                    osc.frequency.setValueAtTime(2500, window.globalAudioCtx.currentTime); // Som mais agudo e alto
+                    gainNode.gain.setValueAtTime(0.5, window.globalAudioCtx.currentTime); 
+                    gainNode.gain.exponentialRampToValueAtTime(0.01, window.globalAudioCtx.currentTime + 0.1);
                     
                     osc.connect(gainNode);
                     gainNode.connect(window.globalAudioCtx.destination);
                     osc.start();
-                    osc.stop(window.globalAudioCtx.currentTime + 0.15);
+                    osc.stop(window.globalAudioCtx.currentTime + 0.1);
                 } else {
                     osc.type = 'sawtooth';
-                    osc.frequency.setValueAtTime(200, window.globalAudioCtx.currentTime);
-                    osc.frequency.setValueAtTime(150, window.globalAudioCtx.currentTime + 0.2);
-                    gainNode.gain.setValueAtTime(0.8, window.globalAudioCtx.currentTime);
-                    gainNode.gain.exponentialRampToValueAtTime(0.01, window.globalAudioCtx.currentTime + 0.4);
+                    osc.frequency.setValueAtTime(300, window.globalAudioCtx.currentTime);
+                    gainNode.gain.setValueAtTime(0.5, window.globalAudioCtx.currentTime);
+                    gainNode.gain.exponentialRampToValueAtTime(0.01, window.globalAudioCtx.currentTime + 0.3);
                     
                     osc.connect(gainNode);
                     gainNode.connect(window.globalAudioCtx.destination);
                     osc.start();
-                    osc.stop(window.globalAudioCtx.currentTime + 0.4);
+                    osc.stop(window.globalAudioCtx.currentTime + 0.3);
                 }
             } catch(e) {}
         };
@@ -680,6 +684,9 @@
         let isConferenceMode = false;
         
         let html5QrCode = null;
+        let isCameraActive = false;
+        let lastScannedCode = '';
+        let lastScannedTime = 0;
 
         const userSection = document.getElementById('userSection');
         const startSection = document.getElementById('startSection');
@@ -703,7 +710,7 @@
                     snapshot.forEach((d) => packages.push(d.data()));
                     packages.sort((a, b) => b.timestamp - a.timestamp);
                     allPackages = packages;
-                    updateScanUI();
+                    window.updateScanUI();
                 });
 
                 onSnapshot(zapHistoryRef, (snapshot) => {
@@ -721,7 +728,10 @@
         window.startNewBatch = function(mode) {
             window.initAudio(); 
             const name = document.getElementById('newUserName').value.trim();
-            if (!name) return window.showToast("Digite o nome do usuário primeiro.", "bg-red-500", "fa-exclamation-triangle");
+            if (!name) {
+                window.showToast("Digite o nome do utilizador primeiro.", "bg-red-500", "fa-exclamation-triangle");
+                return;
+            }
             
             currentBatchUser = name;
             currentUserNameEl.innerText = name;
@@ -749,7 +759,7 @@
         };
 
         window.finalizeBatch = function() {
-            if (confirm("Deseja finalizar este lote e fechar a sessão do usuário?")) {
+            if (confirm("Deseja finalizar este lote e fechar a sessão?")) {
                 currentBatchUser = null;
                 userSection.classList.add('hidden');
                 startSection.classList.remove('hidden');
@@ -760,19 +770,21 @@
 
         window.handleManualInput = function() {
             window.initAudio();
-            const code = barcodeInput.value.trim();
-            if (code) processCode(code);
+            const code = barcodeInput.value;
+            if (code) window.processCode(code);
             barcodeInput.value = "";
             barcodeInput.focus();
         };
 
         barcodeInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') window.handleManualInput(); });
 
-        function processCode(code) {
+        window.processCode = function(code) {
+            code = String(code).trim();
             if (!code) return;
             
-            if (!/^[A-Za-z0-9\-_.]+$/.test(code)) {
-                window.showToast("Caracteres inválidos!", "bg-orange-500", "fa-exclamation-triangle");
+            // Permite letras, números, hifens, pontos, underscore e espaços (comuns em etiquetas de e-commerce)
+            if (!/^[A-Za-z0-9\-_.\s]+$/.test(code)) {
+                window.showToast("Caracteres inválidos detectados!", "bg-orange-500", "fa-exclamation-triangle");
                 window.playBeep(false); 
                 return;
             }
@@ -780,6 +792,7 @@
             let isReturn = false;
             let pkgData = null;
 
+            // 1. Lógica Otimista Local (Para Interface Rápida)
             if (isConferenceMode) {
                 const pkgIndex = allPackages.findIndex(p => p.id === code);
                 if (pkgIndex !== -1) {
@@ -789,7 +802,7 @@
                         return;
                     } else {
                         pkgData = { ...allPackages[pkgIndex], status: 'done', time: "Devolvido às " + new Date().toLocaleTimeString() };
-                        allPackages[pkgIndex] = pkgData; // Atualização Imediata (Optimistic)
+                        allPackages[pkgIndex] = pkgData; 
                         isReturn = true;
                     }
                 } else {
@@ -799,10 +812,11 @@
             } else {
                 if (!currentBatchUser) {
                     window.showToast("Inicie um lote primeiro!", "bg-red-500");
+                    window.playBeep(false);
                     return;
                 }
                 if (allPackages.some(p => p.id === code)) {
-                    window.showToast("Código já registrado nesta lista.", "bg-yellow-500", "fa-exclamation-triangle");
+                    window.showToast("Código já registado nesta lista.", "bg-yellow-500", "fa-exclamation-triangle");
                     window.playBeep(false);
                     return;
                 } else {
@@ -811,24 +825,24 @@
                 }
             }
 
-            // Interface Instantânea
-            updateScanUI();
+            // 2. Feedback Visual e Sonoro
+            window.updateScanUI();
             
             if (isConferenceMode) {
-                window.showToast(isReturn ? `Devolução OK: ${code}` : "Pacote EXTRA!", isReturn ? "bg-green-600" : "bg-purple-600", isReturn ? "fa-check" : "fa-star");
+                window.showToast(isReturn ? `Devolução OK: ${code}` : "Pacote EXTRA detectado!", isReturn ? "bg-green-600" : "bg-purple-600", isReturn ? "fa-check" : "fa-star");
             } else {
                 window.showToast("Adicionado: " + code, "bg-blue-600", "fa-plus");
             }
             window.playBeep(true);
             if (navigator.vibrate) navigator.vibrate(50);
 
-            // Grava no Firebase no Plano de Fundo
+            // 3. Sync em Background (Firebase)
             if (currentUser && pacotesRef && pkgData) {
-                setDoc(doc(pacotesRef, code), pkgData, { merge: true }).catch(e => console.error("Falha ao salvar no servidor", e));
+                setDoc(doc(pacotesRef, code), pkgData, { merge: true }).catch(e => console.error("Falha ao salvar", e));
             }
-        }
+        };
 
-        function updateScanUI() {
+        window.updateScanUI = function() {
             if (allPackages.length === 0) {
                 listContainer.innerHTML = `<p class="p-12 text-center text-slate-400 dark:text-slate-500 italic">Lista vazia.</p>`;
             } else {
@@ -859,7 +873,7 @@
             document.getElementById('statOk').innerText = allPackages.filter(p => p.status === 'done').length;
             document.getElementById('statPending').innerText = allPackages.filter(p => p.status === 'pending').length;
             document.getElementById('listCount').innerText = allPackages.length + " itens";
-        }
+        };
 
         window.exportData = function() {
             if (allPackages.length === 0) return window.showToast("Sem dados para salvar.", "bg-red-500", "fa-exclamation-triangle");
@@ -906,7 +920,7 @@
                     currentBatchUser = null;
                     userSection.classList.add('hidden');
                     startSection.classList.remove('hidden');
-                    updateScanUI();
+                    window.updateScanUI();
                     window.showToast("Importação finalizada!", "bg-green-600", "fa-check");
                 }
             };
@@ -919,7 +933,7 @@
         window.toggleCamera = async function() {
             window.initAudio();
             
-            if (html5QrCode && html5QrCode.getState() === 2) {
+            if (isCameraActive) {
                 window.stopCamera();
                 return;
             }
@@ -931,52 +945,42 @@
             }
 
             try {
-                const devices = await Html5Qrcode.getCameras();
+                const config = { 
+                    fps: 15, 
+                    qrbox: { width: 250, height: 250 },
+                    aspectRatio: 1.0
+                };
+
+                // Pede especificamente a câmera traseira do telemóvel para não congelar
+                await html5QrCode.start({ facingMode: "environment" }, config, (text) => {
+                    const now = Date.now();
+                    // Debounce de 2 segundos para evitar duplo beep imediato
+                    if (text !== lastScannedCode || (now - lastScannedTime) > 2000) {
+                        lastScannedCode = text;
+                        lastScannedTime = now;
+                        window.processCode(text);
+                    }
+                });
                 
-                if (devices && devices.length > 0) {
-                    const select = document.getElementById('camSelect');
-                    select.classList.remove('hidden');
-                    select.innerHTML = devices.map(d => `<option value="${d.id}">${d.label || 'Câmera ' + d.id}</option>`).join('');
-                    
-                    const config = { 
-                        fps: 15, 
-                        qrbox: { width: 250, height: 250 },
-                        aspectRatio: 1.0
-                    };
-
-                    const lastCamera = devices[devices.length - 1]; 
-                    await html5QrCode.start(lastCamera.id, config, (text) => {
-                        processCode(text);
-                        // Pausa a leitura por 2 segundos para evitar bipagem dupla
-                        html5QrCode.pause();
-                        setTimeout(() => { if(html5QrCode.getState() === 3) html5QrCode.resume(); }, 2000);
-                    });
-                    
-                    select.value = lastCamera.id;
-
-                    select.onchange = async () => {
-                        await html5QrCode.stop();
-                        await html5QrCode.start(select.value, config, (text) => processCode(text));
-                    };
-                } else {
-                    window.showToast("Nenhuma câmera encontrada.", "bg-red-500", "fa-video-slash");
-                    cameraContainer.classList.add('hidden');
-                }
+                isCameraActive = true;
             } catch (err) {
                 console.error("Erro câmera:", err);
                 window.showToast("Câmera bloqueada ou indisponível.", "bg-red-500", "fa-video-slash");
-                cameraContainer.classList.add('hidden');
+                window.stopCamera();
             }
         };
 
         window.stopCamera = function() {
-            if (html5QrCode && html5QrCode.getState() === 2) {
+            if (html5QrCode && isCameraActive) {
                 html5QrCode.stop().then(() => {
+                    isCameraActive = false;
                     cameraContainer.classList.add('hidden');
                 }).catch(err => {
+                    isCameraActive = false;
                     cameraContainer.classList.add('hidden');
                 });
             } else {
+                isCameraActive = false;
                 cameraContainer.classList.add('hidden');
             }
         };
@@ -998,7 +1002,7 @@
                 userSection.classList.add('hidden');
                 startSection.classList.remove('hidden');
                 window.stopCamera();
-                updateScanUI();
+                window.updateScanUI();
                 document.getElementById('uploadInput').value = "";
                 window.showToast("Tudo limpo!", "bg-green-600");
             }
