@@ -16,10 +16,10 @@
     <!-- Font Awesome -->
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     
-    <!-- Bibliotecas de PDF e ZXing -->
+    <!-- Bibliotecas: PDF e Leitor de QR/Barcode Padrão (html5-qr-code) -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
-    <script type="text/javascript" src="https://unpkg.com/@zxing/library@latest/umd/index.min.js"></script>
+    <script src="https://unpkg.com/html5-qr-code"></script>
 
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
@@ -62,6 +62,9 @@
         .dark .row-done { background-color: rgba(34, 197, 94, 0.1); border-left: 4px solid #22c55e; }
         .row-pending { background-color: #fef2f2; border-left: 4px solid #ef4444; }
         .dark .row-pending { background-color: rgba(239, 68, 68, 0.1); border-left: 4px solid #ef4444; }
+        
+        #reader { width: 100% !important; border-radius: 12px; overflow: hidden; }
+        #reader video { object-fit: cover !important; border-radius: 12px; }
         
         .animate-pulse-slow { animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
         @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .5; } }
@@ -269,17 +272,11 @@
             </div>
         </div>
 
-        <!-- Câmera Estável Quadrada -->
-        <div id="cameraContainer" class="hidden mb-6 mx-auto w-full max-w-[300px] aspect-square bg-black rounded-2xl overflow-hidden shadow-2xl relative flex items-center justify-center">
-            <video id="readerVideo" class="w-full h-full object-cover scale-105" autoplay muted playsinline></video>
+        <!-- Câmera Clássica (html5-qr-code) -->
+        <div id="cameraContainer" class="hidden mb-6 bg-black rounded-2xl overflow-hidden shadow-2xl relative min-h-[300px] flex items-center justify-center">
+            <div id="reader" class="w-full h-full"></div>
             
-            <div class="absolute inset-0 pointer-events-none border-[30px] border-black/50 z-10 flex items-center justify-center">
-                <div class="w-full h-full border-2 border-green-500/50 relative rounded-md">
-                    <div class="absolute top-1/2 left-0 w-full border-t-[3px] border-dotted border-green-400 shadow-[0_0_10px_rgba(74,222,128,1)] -translate-y-1/2"></div>
-                </div>
-            </div>
-
-            <div class="absolute top-2 right-2 z-20 flex gap-2 pointer-events-auto">
+            <div class="absolute top-4 right-4 z-20 flex gap-2 pointer-events-auto">
                 <select id="camSelect" class="bg-black/60 text-white text-xs p-2 rounded-lg border border-white/20 outline-none hidden"></select>
                 <button onclick="window.stopCamera()" class="bg-red-500/90 hover:bg-red-500 text-white w-10 h-10 rounded-full flex items-center justify-center transition-colors shadow-lg border border-red-400 focus:outline-none">
                     <i class="fas fa-times"></i>
@@ -314,7 +311,7 @@
 
         <div class="bg-white dark:bg-zinc-900 rounded-2xl shadow-sm border border-gray-200 dark:border-zinc-700 overflow-hidden transition-colors">
             <div class="p-4 bg-slate-50 dark:bg-zinc-800 border-b border-gray-200 dark:border-zinc-700 flex justify-between items-center transition-colors">
-                <span class="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Registros</span>
+                <span class="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Registros (Nuvem)</span>
                 <span id="listCount" class="text-xs font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 px-2 py-1 rounded">0 itens</span>
             </div>
             <div id="packageList" class="divide-y divide-gray-100 dark:divide-zinc-800 max-h-[400px] overflow-y-auto">
@@ -403,52 +400,52 @@
         initAuth();
 
         // ==========================================
-        // ÁUDIO (BIPE)
+        // ÁUDIO (BIPE) - Ativado no clique
         // ==========================================
-        let globalAudioCtx = null;
+        window.globalAudioCtx = null;
         
-        function initAudio() {
+        window.initAudio = function() {
             try {
                 const AudioContext = window.AudioContext || window.webkitAudioContext;
-                if (!globalAudioCtx && AudioContext) {
-                    globalAudioCtx = new AudioContext();
+                if (!window.globalAudioCtx && AudioContext) {
+                    window.globalAudioCtx = new AudioContext();
                 }
-                if (globalAudioCtx && globalAudioCtx.state === 'suspended') {
-                    globalAudioCtx.resume();
+                if (window.globalAudioCtx && window.globalAudioCtx.state === 'suspended') {
+                    window.globalAudioCtx.resume();
                 }
             } catch(e) {}
-        }
+        };
 
-        function playBeep(isSuccess = true) {
+        window.playBeep = function(isSuccess = true) {
             try {
-                if (!globalAudioCtx) return;
-                const osc = globalAudioCtx.createOscillator();
-                const gainNode = globalAudioCtx.createGain();
+                if (!window.globalAudioCtx) return;
+                const osc = window.globalAudioCtx.createOscillator();
+                const gainNode = window.globalAudioCtx.createGain();
                 
                 if (isSuccess) {
                     osc.type = 'square';
-                    osc.frequency.setValueAtTime(2000, globalAudioCtx.currentTime);
-                    gainNode.gain.setValueAtTime(0.8, globalAudioCtx.currentTime); 
-                    gainNode.gain.exponentialRampToValueAtTime(0.01, globalAudioCtx.currentTime + 0.15);
+                    osc.frequency.setValueAtTime(2000, window.globalAudioCtx.currentTime);
+                    gainNode.gain.setValueAtTime(0.8, window.globalAudioCtx.currentTime); 
+                    gainNode.gain.exponentialRampToValueAtTime(0.01, window.globalAudioCtx.currentTime + 0.15);
                     
                     osc.connect(gainNode);
-                    gainNode.connect(globalAudioCtx.destination);
+                    gainNode.connect(window.globalAudioCtx.destination);
                     osc.start();
-                    osc.stop(globalAudioCtx.currentTime + 0.15);
+                    osc.stop(window.globalAudioCtx.currentTime + 0.15);
                 } else {
                     osc.type = 'sawtooth';
-                    osc.frequency.setValueAtTime(200, globalAudioCtx.currentTime);
-                    osc.frequency.setValueAtTime(150, globalAudioCtx.currentTime + 0.2);
-                    gainNode.gain.setValueAtTime(0.8, globalAudioCtx.currentTime);
-                    gainNode.gain.exponentialRampToValueAtTime(0.01, globalAudioCtx.currentTime + 0.4);
+                    osc.frequency.setValueAtTime(200, window.globalAudioCtx.currentTime);
+                    osc.frequency.setValueAtTime(150, window.globalAudioCtx.currentTime + 0.2);
+                    gainNode.gain.setValueAtTime(0.8, window.globalAudioCtx.currentTime);
+                    gainNode.gain.exponentialRampToValueAtTime(0.01, window.globalAudioCtx.currentTime + 0.4);
                     
                     osc.connect(gainNode);
-                    gainNode.connect(globalAudioCtx.destination);
+                    gainNode.connect(window.globalAudioCtx.destination);
                     osc.start();
-                    osc.stop(globalAudioCtx.currentTime + 0.4);
+                    osc.stop(window.globalAudioCtx.currentTime + 0.4);
                 }
             } catch(e) {}
-        }
+        };
 
         // ==========================================
         // GLOBALS NAVEGAÇÃO / UI
@@ -512,7 +509,7 @@
         };
 
         // ==========================================
-        // ZAP SEM ADD + FIREBASE OTIMIZADO
+        // ZAP SEM ADD
         // ==========================================
         let zapHistory = [];
         const phoneInput = document.getElementById('phoneInput');
@@ -575,14 +572,12 @@
         };
 
         async function saveToHistory(number, stop) {
-            // Salva Localmente (Optimistic)
             const today = new Date().toLocaleDateString('pt-BR');
             const newHistoryItem = { phone: number, stop: stop, date: today, timestamp: Date.now() };
             
             zapHistory = zapHistory.filter(item => !(item.phone === number && item.date === today));
             zapHistory.unshift(newHistoryItem);
             
-            // Backup no Firebase no plano de fundo
             if (currentUser && zapHistoryRef) {
                 const docId = `${number}_${today.replace(/\//g, '-')}`;
                 setDoc(doc(zapHistoryRef, docId), newHistoryItem).catch(e=>console.log(e));
@@ -630,10 +625,9 @@
             if(confirm("Deseja apagar todo o histórico de HOJE?")) {
                 const today = new Date().toLocaleDateString('pt-BR');
                 const todaysCalls = zapHistory.filter(item => item.date === today);
-                zapHistory = zapHistory.filter(item => item.date !== today); // Apaga local
+                zapHistory = zapHistory.filter(item => item.date !== today); 
                 renderHistoryList();
 
-                // Apaga no Firebase
                 if(zapHistoryRef) {
                     for (const item of todaysCalls) {
                         const docId = `${item.phone}_${today.replace(/\//g, '-')}`;
@@ -679,16 +673,13 @@
         };
 
         // ==========================================
-        // SCAN PCT + FIREBASE OTIMIZADO (Optimistic UI)
+        // SCAN PCT + FIREBASE OTIMIZADO 
         // ==========================================
         let allPackages = [];
         let currentBatchUser = null;
         let isConferenceMode = false;
         
-        let codeReader = null;
-        let isCameraActive = false; 
-        let lastScannedCode = '';
-        let lastScannedTime = 0;
+        let html5QrCode = null;
 
         const userSection = document.getElementById('userSection');
         const startSection = document.getElementById('startSection');
@@ -713,8 +704,6 @@
                     packages.sort((a, b) => b.timestamp - a.timestamp);
                     allPackages = packages;
                     updateScanUI();
-                }, (error) => {
-                    console.error("Erro Firebase Pacotes:", error);
                 });
 
                 onSnapshot(zapHistoryRef, (snapshot) => {
@@ -730,9 +719,9 @@
         });
 
         window.startNewBatch = function(mode) {
-            initAudio(); 
+            window.initAudio(); 
             const name = document.getElementById('newUserName').value.trim();
-            if (!name) return window.showToast("Por favor, digite o nome do usuário.", "bg-red-500", "fa-exclamation-triangle");
+            if (!name) return window.showToast("Digite o nome do usuário primeiro.", "bg-red-500", "fa-exclamation-triangle");
             
             currentBatchUser = name;
             currentUserNameEl.innerText = name;
@@ -770,7 +759,7 @@
         };
 
         window.handleManualInput = function() {
-            initAudio();
+            window.initAudio();
             const code = barcodeInput.value.trim();
             if (code) processCode(code);
             barcodeInput.value = "";
@@ -779,66 +768,63 @@
 
         barcodeInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') window.handleManualInput(); });
 
-        async function processCode(code) {
+        function processCode(code) {
             if (!code) return;
             
-            // Aceita letras, números, hífens e pontos
             if (!/^[A-Za-z0-9\-_.]+$/.test(code)) {
-                window.showToast("Caracteres inválidos detectados!", "bg-orange-500", "fa-exclamation-triangle");
-                if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
-                playBeep(false); 
+                window.showToast("Caracteres inválidos!", "bg-orange-500", "fa-exclamation-triangle");
+                window.playBeep(false); 
                 return;
             }
 
             let isReturn = false;
             let pkgData = null;
 
-            // 1. Processamento Lógico Imediato
             if (isConferenceMode) {
                 const pkgIndex = allPackages.findIndex(p => p.id === code);
                 if (pkgIndex !== -1) {
                     if (allPackages[pkgIndex].status === 'done') {
                         window.showToast("Este item já foi devolvido.", "bg-yellow-500", "fa-exclamation-triangle");
-                        playBeep(false);
+                        window.playBeep(false);
                         return;
                     } else {
                         pkgData = { ...allPackages[pkgIndex], status: 'done', time: "Devolvido às " + new Date().toLocaleTimeString() };
-                        allPackages[pkgIndex] = pkgData; // Atualiza local
+                        allPackages[pkgIndex] = pkgData; // Atualização Imediata (Optimistic)
                         isReturn = true;
                     }
                 } else {
                     pkgData = { id: code, user: currentBatchUser || 'EXTRA', status: 'extra', time: new Date().toLocaleTimeString(), timestamp: Date.now() };
-                    allPackages.unshift(pkgData); // Adiciona Extra local
+                    allPackages.unshift(pkgData); 
                 }
             } else {
-                if (!currentBatchUser) return;
+                if (!currentBatchUser) {
+                    window.showToast("Inicie um lote primeiro!", "bg-red-500");
+                    return;
+                }
                 if (allPackages.some(p => p.id === code)) {
                     window.showToast("Código já registrado nesta lista.", "bg-yellow-500", "fa-exclamation-triangle");
-                    playBeep(false);
+                    window.playBeep(false);
                     return;
                 } else {
                     pkgData = { id: code, user: currentBatchUser, status: 'out', time: new Date().toLocaleTimeString(), timestamp: Date.now() };
-                    allPackages.unshift(pkgData); // Adiciona Local
+                    allPackages.unshift(pkgData); 
                 }
             }
 
-            // 2. Feedback Visual e Sonoro Imediato
+            // Interface Instantânea
             updateScanUI();
+            
             if (isConferenceMode) {
-                window.showToast(isReturn ? `Devolução OK: ${code}` : "Pacote EXTRA detectado!", isReturn ? "bg-green-600" : "bg-purple-600", isReturn ? "fa-check" : "fa-star");
+                window.showToast(isReturn ? `Devolução OK: ${code}` : "Pacote EXTRA!", isReturn ? "bg-green-600" : "bg-purple-600", isReturn ? "fa-check" : "fa-star");
             } else {
                 window.showToast("Adicionado: " + code, "bg-blue-600", "fa-plus");
             }
-            playBeep(true);
+            window.playBeep(true);
             if (navigator.vibrate) navigator.vibrate(50);
 
-            // 3. Sincronização no Background com Firebase
+            // Grava no Firebase no Plano de Fundo
             if (currentUser && pacotesRef && pkgData) {
-                try {
-                    await setDoc(doc(pacotesRef, code), pkgData, { merge: true });
-                } catch(e) {
-                    console.error("Erro salvando no Firebase:", e);
-                }
+                setDoc(doc(pacotesRef, code), pkgData, { merge: true }).catch(e => console.error("Falha ao salvar no servidor", e));
             }
         }
 
@@ -904,15 +890,13 @@
                 }
 
                 if (newPackages.length > 0) {
-                    window.showToast("Carregando itens...", "bg-blue-600", "fa-cloud-upload-alt");
+                    window.showToast("Sincronizando...", "bg-blue-600", "fa-cloud-upload-alt");
                     
-                    // Sincroniza com Firebase se conectado
                     if (currentUser && pacotesRef) {
                         for (const pkg of newPackages) {
                             setDoc(doc(pacotesRef, pkg.id), pkg, { merge: true }).catch(e=>{});
                         }
                     } else {
-                        // Modo offline: apenas mescla localmente
                         allPackages = newPackages;
                     }
 
@@ -929,80 +913,72 @@
             reader.readAsText(file);
         };
 
-        // ZXing Camera Control Mais Estável
+        // ==========================================
+        // CÂMERA (HTML5-QR-CODE) Padrão
+        // ==========================================
         window.toggleCamera = async function() {
-            initAudio();
+            window.initAudio();
+            
+            if (html5QrCode && html5QrCode.getState() === 2) {
+                window.stopCamera();
+                return;
+            }
+
+            cameraContainer.classList.remove('hidden');
+            
+            if (!html5QrCode) {
+                html5QrCode = new Html5Qrcode("reader");
+            }
+
             try {
-                if (isCameraActive) {
-                    window.stopCamera();
-                    return;
-                }
-
-                document.getElementById('camBtnText').innerText = "Iniciando...";
-                cameraContainer.classList.remove('hidden');
+                const devices = await Html5Qrcode.getCameras();
                 
-                if (!codeReader) {
-                    codeReader = new ZXing.BrowserMultiFormatReader();
-                }
-
-                const videoInputDevices = await codeReader.listVideoInputDevices();
-                
-                if (videoInputDevices && videoInputDevices.length > 0) {
+                if (devices && devices.length > 0) {
                     const select = document.getElementById('camSelect');
                     select.classList.remove('hidden');
+                    select.innerHTML = devices.map(d => `<option value="${d.id}">${d.label || 'Câmera ' + d.id}</option>`).join('');
                     
-                    let selectedDeviceId = videoInputDevices[0].deviceId;
-                    // Procura preferencialmente câmera traseira
-                    const backCamera = videoInputDevices.find(d => d.label.toLowerCase().includes('back') || d.label.toLowerCase().includes('traseira') || d.label.toLowerCase().includes('environment'));
-                    if (backCamera) selectedDeviceId = backCamera.deviceId;
+                    const config = { 
+                        fps: 15, 
+                        qrbox: { width: 250, height: 250 },
+                        aspectRatio: 1.0
+                    };
 
-                    select.innerHTML = videoInputDevices.map(d => `<option value="${d.deviceId}">${d.label || 'Câmera ' + d.deviceId}</option>`).join('');
-                    select.value = selectedDeviceId;
+                    const lastCamera = devices[devices.length - 1]; 
+                    await html5QrCode.start(lastCamera.id, config, (text) => {
+                        processCode(text);
+                        // Pausa a leitura por 2 segundos para evitar bipagem dupla
+                        html5QrCode.pause();
+                        setTimeout(() => { if(html5QrCode.getState() === 3) html5QrCode.resume(); }, 2000);
+                    });
+                    
+                    select.value = lastCamera.id;
 
-                    startScanning(selectedDeviceId);
-
-                    select.onchange = () => {
-                        codeReader.reset();
-                        startScanning(select.value);
+                    select.onchange = async () => {
+                        await html5QrCode.stop();
+                        await html5QrCode.start(select.value, config, (text) => processCode(text));
                     };
                 } else {
-                    window.showToast("Nenhuma câmera detectada.", "bg-red-500", "fa-video-slash");
-                    window.stopCamera();
+                    window.showToast("Nenhuma câmera encontrada.", "bg-red-500", "fa-video-slash");
+                    cameraContainer.classList.add('hidden');
                 }
-
             } catch (err) {
                 console.error("Erro câmera:", err);
                 window.showToast("Câmera bloqueada ou indisponível.", "bg-red-500", "fa-video-slash");
-                window.stopCamera();
+                cameraContainer.classList.add('hidden');
             }
         };
 
-        function startScanning(deviceId) {
-            codeReader.decodeFromVideoDevice(deviceId, 'readerVideo', (result, err) => {
-                if (result) {
-                    const code = result.getText();
-                    const now = Date.now();
-                    
-                    if (code !== lastScannedCode || (now - lastScannedTime) > 2000) {
-                        lastScannedCode = code;
-                        lastScannedTime = now;
-                        processCode(code);
-                    }
-                }
-            }).catch(err => {
-                // Erros contínuos de NotFoundException são normais enquanto ele não acha o código, apenas ignoramos.
-            });
-
-            isCameraActive = true;
-            document.getElementById('camBtnText').innerText = "Parar Câmera";
-        }
-
         window.stopCamera = function() {
-            if (codeReader) codeReader.reset();
-            isCameraActive = false;
-            cameraContainer.classList.add('hidden');
-            const btnTxt = document.getElementById('camBtnText');
-            if (btnTxt) btnTxt.innerText = "Ativar Câmera";
+            if (html5QrCode && html5QrCode.getState() === 2) {
+                html5QrCode.stop().then(() => {
+                    cameraContainer.classList.add('hidden');
+                }).catch(err => {
+                    cameraContainer.classList.add('hidden');
+                });
+            } else {
+                cameraContainer.classList.add('hidden');
+            }
         };
 
         window.resetEverything = async function() {
