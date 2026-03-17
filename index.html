@@ -16,10 +16,10 @@
     <!-- Font Awesome -->
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     
-    <!-- Bibliotecas: PDF e Leitor de QR/Barcode Padrão (html5-qr-code) -->
+    <!-- Bibliotecas de PDF e ZXing -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
-    <script src="https://unpkg.com/html5-qr-code"></script>
+    <script type="text/javascript" src="https://unpkg.com/@zxing/library@latest/umd/index.min.js"></script>
 
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
@@ -62,9 +62,6 @@
         .dark .row-done { background-color: rgba(34, 197, 94, 0.1); border-left: 4px solid #22c55e; }
         .row-pending { background-color: #fef2f2; border-left: 4px solid #ef4444; }
         .dark .row-pending { background-color: rgba(239, 68, 68, 0.1); border-left: 4px solid #ef4444; }
-        
-        #reader { width: 100% !important; border-radius: 12px; overflow: hidden; }
-        #reader video { object-fit: cover !important; border-radius: 12px; }
         
         .animate-pulse-slow { animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
         @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .5; } }
@@ -214,7 +211,7 @@
 
 
     <!-- ========================================== -->
-    <!-- VIEW 2: SCAN PCT (Totalmente Local para Teste) -->
+    <!-- VIEW 2: SCAN PCT -->
     <!-- ========================================== -->
     <main id="view-scan" class="w-full max-w-2xl mx-auto p-4 pt-24 animate-fade-in relative z-10 hidden pb-20">
         
@@ -228,11 +225,10 @@
             </button>
         </header>
 
-        <!-- Container do Usuário Ativo -->
         <div id="userSection" class="bg-blue-600 rounded-2xl p-6 shadow-lg text-white mb-6 transition-all hidden">
             <div class="flex justify-between items-start mb-4">
                 <div>
-                    <span class="text-blue-100 text-xs font-bold uppercase tracking-wider">Usuário Atual:</span>
+                    <span class="text-blue-100 text-xs font-bold uppercase tracking-wider">Lote Atual com:</span>
                     <h2 id="currentUserName" class="text-2xl font-bold italic">Nenhum</h2>
                 </div>
                 <button onclick="window.finalizeBatch()" class="bg-white text-blue-600 px-4 py-2 rounded-xl font-bold text-sm shadow-md hover:bg-blue-50 transition-all">
@@ -253,13 +249,12 @@
             </button>
         </div>
 
-        <!-- Container para Iniciar Lote -->
         <div id="startSection" class="bg-white dark:bg-zinc-900 rounded-2xl p-8 shadow-sm border border-gray-200 dark:border-zinc-700 text-center transition-colors">
             <div class="mb-4 bg-blue-50 dark:bg-blue-900/30 w-16 h-16 rounded-full flex items-center justify-center mx-auto text-blue-600 dark:text-blue-400">
                 <i class="fas fa-box-open text-2xl"></i>
             </div>
             <h3 class="text-xl font-bold text-slate-800 dark:text-white">Operação de Lote</h3>
-            <p class="text-slate-500 dark:text-slate-400 mb-6">Digite um nome de utilizador para iniciar as operações.</p>
+            <p class="text-slate-500 dark:text-slate-400 mb-6">Inicie uma nova bipagem ou processe devoluções.</p>
             <input type="text" id="newUserName" placeholder="Nome do Usuário / Entregador" 
                    class="w-full p-4 mb-4 border border-gray-200 dark:border-zinc-700 bg-gray-50 dark:bg-zinc-800 text-gray-900 dark:text-white rounded-2xl text-center text-lg focus:ring-2 focus:ring-blue-500 outline-none transition-colors">
             
@@ -273,11 +268,17 @@
             </div>
         </div>
 
-        <!-- Câmera Scanner Padrão (Sem Firebase) -->
-        <div id="cameraContainer" class="hidden mb-6 bg-black rounded-2xl overflow-hidden shadow-2xl relative">
-            <div id="reader" class="w-full"></div>
+        <div id="cameraContainer" class="hidden mb-6 mx-auto w-full max-w-[300px] aspect-square bg-black rounded-2xl overflow-hidden shadow-2xl relative flex items-center justify-center">
+            <video id="readerVideo" class="w-full h-full object-cover scale-105" autoplay muted playsinline></video>
             
+            <div class="absolute inset-0 pointer-events-none border-[30px] border-black/50 z-10 flex items-center justify-center">
+                <div class="w-full h-full border-2 border-green-500/50 relative rounded-md">
+                    <div class="absolute top-1/2 left-0 w-full border-t-[3px] border-dotted border-green-400 shadow-[0_0_10px_rgba(74,222,128,1)] -translate-y-1/2"></div>
+                </div>
+            </div>
+
             <div class="absolute top-2 right-2 z-20 flex gap-2 pointer-events-auto">
+                <select id="camSelect" class="bg-black/60 text-white text-xs p-2 rounded-lg border border-white/20 outline-none hidden"></select>
                 <button onclick="window.stopCamera()" class="bg-red-500/90 hover:bg-red-500 text-white w-10 h-10 rounded-full flex items-center justify-center transition-colors shadow-lg border border-red-400 focus:outline-none">
                     <i class="fas fa-times"></i>
                 </button>
@@ -311,14 +312,15 @@
 
         <div class="bg-white dark:bg-zinc-900 rounded-2xl shadow-sm border border-gray-200 dark:border-zinc-700 overflow-hidden transition-colors">
             <div class="p-4 bg-slate-50 dark:bg-zinc-800 border-b border-gray-200 dark:border-zinc-700 flex justify-between items-center transition-colors">
-                <span class="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Registros (Local)</span>
+                <span class="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Registros (Nuvem)</span>
                 <span id="listCount" class="text-xs font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 px-2 py-1 rounded">0 itens</span>
             </div>
             <div id="packageList" class="divide-y divide-gray-100 dark:divide-zinc-800 max-h-[400px] overflow-y-auto">
-                <p class="p-12 text-center text-slate-400 dark:text-slate-500 italic">Lista vazia.</p>
+                <p class="p-12 text-center text-slate-400 dark:text-slate-500 italic">Lista vazia. Conectando ao servidor...</p>
             </div>
         </div>
     </main>
+
 
     <!-- ========================================== -->
     <!-- MODAIS E TOASTS GLOBAIS -->
@@ -330,7 +332,7 @@
             
             <div class="flex justify-between items-center mb-4 border-b border-gray-200 dark:border-zinc-700 pb-4">
                 <h3 class="text-lg font-bold text-gray-800 dark:text-white flex items-center gap-2">
-                    <i class="fas fa-calendar-day text-green-500"></i> Histórico do Dia
+                    <i class="fas fa-calendar-day text-green-500"></i> Histórico (Nuvem)
                 </h3>
                 <button onclick="window.closeHistoryModal()" class="text-gray-400 hover:text-red-500 dark:hover:text-red-400 transition-colors">
                     <i class="fas fa-times text-xl"></i>
@@ -355,58 +357,91 @@
         <span id="toastMsg">Mensagem</span>
     </div>
 
-    <!-- Script Principal Completo (Sem módulos externos do Firebase) -->
-    <script>
+    <!-- Módulo Firebase + App Core Script -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
+        import { getFirestore, collection, onSnapshot, doc, setDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+
+        // ==========================================
+        // SETUP FIREBASE 
+        // ==========================================
+        const userFirebaseConfig = {
+            apiKey: "AIzaSyC05tYoKOHOBf6pNhhmMqgSap1g3iB4Im4",
+            authDomain: "logistica-pacotes.firebaseapp.com",
+            projectId: "logistica-pacotes",
+            storageBucket: "logistica-pacotes.firebasestorage.app",
+            messagingSenderId: "1075697583297",
+            appId: "1:1075697583297:web:e5449efc5e8e5cf08d4040"
+        };
+        
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : userFirebaseConfig;
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'logistica-pro';
+        
+        let currentUser = null;
+        let pacotesRef = null;
+        let zapHistoryRef = null;
+
+        // Autenticação Silenciosa Inicial
+        const initAuth = async () => {
+            if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                await signInWithCustomToken(auth, __initial_auth_token);
+            } else {
+                await signInAnonymously(auth);
+            }
+        };
+        initAuth();
+
         // ==========================================
         // ÁUDIO (BIPE)
         // ==========================================
-        window.globalAudioCtx = null;
+        let globalAudioCtx = null;
         
-        window.initAudio = function() {
+        function initAudio() {
             try {
                 const AudioContext = window.AudioContext || window.webkitAudioContext;
-                if (!window.globalAudioCtx && AudioContext) {
-                    window.globalAudioCtx = new AudioContext();
+                if (!globalAudioCtx && AudioContext) {
+                    globalAudioCtx = new AudioContext();
                 }
-                if (window.globalAudioCtx && window.globalAudioCtx.state === 'suspended') {
-                    window.globalAudioCtx.resume();
+                if (globalAudioCtx && globalAudioCtx.state === 'suspended') {
+                    globalAudioCtx.resume();
                 }
             } catch(e) {}
-        };
+        }
 
-        window.playBeep = function(isSuccess = true) {
+        function playBeep(isSuccess = true) {
             try {
-                if (!window.globalAudioCtx) {
-                    window.initAudio();
-                }
-                if (!window.globalAudioCtx) return;
-                
-                const osc = window.globalAudioCtx.createOscillator();
-                const gainNode = window.globalAudioCtx.createGain();
+                if (!globalAudioCtx) return;
+                const osc = globalAudioCtx.createOscillator();
+                const gainNode = globalAudioCtx.createGain();
                 
                 if (isSuccess) {
                     osc.type = 'square';
-                    osc.frequency.setValueAtTime(2500, window.globalAudioCtx.currentTime); // Som agudo/alto
-                    gainNode.gain.setValueAtTime(0.5, window.globalAudioCtx.currentTime); 
-                    gainNode.gain.exponentialRampToValueAtTime(0.01, window.globalAudioCtx.currentTime + 0.1);
+                    osc.frequency.setValueAtTime(2000, globalAudioCtx.currentTime);
+                    gainNode.gain.setValueAtTime(0.8, globalAudioCtx.currentTime); 
+                    gainNode.gain.exponentialRampToValueAtTime(0.01, globalAudioCtx.currentTime + 0.15);
                     
                     osc.connect(gainNode);
-                    gainNode.connect(window.globalAudioCtx.destination);
+                    gainNode.connect(globalAudioCtx.destination);
                     osc.start();
-                    osc.stop(window.globalAudioCtx.currentTime + 0.1);
+                    osc.stop(globalAudioCtx.currentTime + 0.15);
                 } else {
                     osc.type = 'sawtooth';
-                    osc.frequency.setValueAtTime(300, window.globalAudioCtx.currentTime);
-                    gainNode.gain.setValueAtTime(0.5, window.globalAudioCtx.currentTime);
-                    gainNode.gain.exponentialRampToValueAtTime(0.01, window.globalAudioCtx.currentTime + 0.3);
+                    osc.frequency.setValueAtTime(200, globalAudioCtx.currentTime);
+                    osc.frequency.setValueAtTime(150, globalAudioCtx.currentTime + 0.2);
+                    gainNode.gain.setValueAtTime(0.8, globalAudioCtx.currentTime);
+                    gainNode.gain.exponentialRampToValueAtTime(0.01, globalAudioCtx.currentTime + 0.4);
                     
                     osc.connect(gainNode);
-                    gainNode.connect(window.globalAudioCtx.destination);
+                    gainNode.connect(globalAudioCtx.destination);
                     osc.start();
-                    osc.stop(window.globalAudioCtx.currentTime + 0.3);
+                    osc.stop(globalAudioCtx.currentTime + 0.4);
                 }
             } catch(e) {}
-        };
+        }
 
         // ==========================================
         // GLOBALS NAVEGAÇÃO / UI
@@ -470,8 +505,9 @@
         };
 
         // ==========================================
-        // ZAP SEM ADD (LocalStorage Total)
+        // ZAP SEM ADD + FIREBASE
         // ==========================================
+        let zapHistory = [];
         const phoneInput = document.getElementById('phoneInput');
         const stopInput = document.getElementById('stopInput');
         const messageInput = document.getElementById('messageInput');
@@ -531,14 +567,19 @@
             }
         };
 
-        function saveToHistory(number, stop) {
-            let zapHistory = JSON.parse(localStorage.getItem('wa_full_history_v2') || '[]');
+        async function saveToHistory(number, stop) {
+            if (!currentUser || !zapHistoryRef) return;
             const today = new Date().toLocaleDateString('pt-BR');
-            const newHistoryItem = { phone: number, stop: stop, date: today, timestamp: Date.now() };
+            const docId = `${number}_${today.replace(/\//g, '-')}`;
             
-            zapHistory = zapHistory.filter(item => !(item.phone === number && item.date === today));
-            zapHistory.unshift(newHistoryItem);
-            localStorage.setItem('wa_full_history_v2', JSON.stringify(zapHistory));
+            try {
+                await setDoc(doc(zapHistoryRef, docId), {
+                    phone: number,
+                    stop: stop,
+                    date: today,
+                    timestamp: Date.now()
+                });
+            } catch(e) { console.error("Erro salvando histórico Zap", e); }
         }
 
         window.openHistoryModal = function() { 
@@ -548,7 +589,6 @@
         window.closeHistoryModal = function() { historyModal.classList.add('hidden'); };
 
         function renderHistoryList() {
-            let zapHistory = JSON.parse(localStorage.getItem('wa_full_history_v2') || '[]');
             const today = new Date().toLocaleDateString('pt-BR');
             const todaysCalls = zapHistory.filter(item => item.date === today);
 
@@ -579,18 +619,20 @@
             });
         }
 
-        window.clearDailyHistory = function() {
+        window.clearDailyHistory = async function() {
             if(confirm("Deseja apagar todo o histórico de HOJE?")) {
-                let zapHistory = JSON.parse(localStorage.getItem('wa_full_history_v2') || '[]');
+                if(!zapHistoryRef) return;
                 const today = new Date().toLocaleDateString('pt-BR');
-                zapHistory = zapHistory.filter(item => item.date !== today); 
-                localStorage.setItem('wa_full_history_v2', JSON.stringify(zapHistory));
-                renderHistoryList();
+                const todaysCalls = zapHistory.filter(item => item.date === today);
+                
+                for (const item of todaysCalls) {
+                    const docId = `${item.phone}_${today.replace(/\//g, '-')}`;
+                    await deleteDoc(doc(zapHistoryRef, docId));
+                }
             }
         };
 
         window.saveHistoryPDF = function() {
-            let zapHistory = JSON.parse(localStorage.getItem('wa_full_history_v2') || '[]');
             const today = new Date().toLocaleDateString('pt-BR');
             const todaysCalls = zapHistory.filter(item => item.date === today);
             if (todaysCalls.length === 0) return window.showToast("Nada para salvar hoje.", "bg-yellow-500");
@@ -603,8 +645,7 @@
                 doc.setFontSize(10);
                 doc.text(`Total de chamadas: ${todaysCalls.length}`, 14, 28);
 
-                const chronologicalData = [...todaysCalls].reverse();
-                const tableData = chronologicalData.map(item => [
+                const tableData = [...todaysCalls].map(item => [
                     item.stop || '-', 
                     item.phone.replace(/^(\d{2})(\d{5})(\d{4})/, "($1) $2-$3"),
                     new Date(item.timestamp).toLocaleTimeString('pt-BR', {hour: '2-digit', minute:'2-digit'})
@@ -627,14 +668,14 @@
         };
 
         // ==========================================
-        // SCAN PCT - TOTALMENTE LOCAL E SEGURO
+        // SCAN PCT + FIREBASE
         // ==========================================
         let allPackages = [];
         let currentBatchUser = null;
         let isConferenceMode = false;
         
-        let html5QrCode = null;
-        let isCameraActive = false;
+        let codeReader = null;
+        let isCameraActive = false; 
         let lastScannedCode = '';
         let lastScannedTime = 0;
 
@@ -646,13 +687,43 @@
         const modeIndicator = document.getElementById('modeIndicator');
         const cameraContainer = document.getElementById('cameraContainer');
 
-        window.startNewBatch = function(mode) {
-            window.initAudio(); 
-            const name = document.getElementById('newUserName').value.trim();
-            if (!name) {
-                window.showToast("Digite o nome do utilizador primeiro.", "bg-red-500", "fa-exclamation-triangle");
-                return;
+        // Escutador principal do Firebase quando o usuario estiver logado
+        onAuthStateChanged(auth, user => {
+            currentUser = user;
+            if (user) {
+                // Public Data = Pacotes Logística
+                pacotesRef = collection(db, 'artifacts', appId, 'public', 'data', 'pacotes');
+                // Private Data = Histórico do Zap
+                zapHistoryRef = collection(db, 'artifacts', appId, 'users', user.uid, 'zap_history');
+                
+                onSnapshot(pacotesRef, (snapshot) => {
+                    const packages = [];
+                    snapshot.forEach((d) => packages.push(d.data()));
+                    packages.sort((a, b) => b.timestamp - a.timestamp);
+                    allPackages = packages;
+                    updateScanUI();
+                }, (error) => {
+                    console.error("Erro Firebase Pacotes:", error);
+                });
+
+                onSnapshot(zapHistoryRef, (snapshot) => {
+                    const history = [];
+                    snapshot.forEach((d) => history.push(d.data()));
+                    history.sort((a, b) => b.timestamp - a.timestamp);
+                    zapHistory = history;
+                    if (!historyModal.classList.contains('hidden')) {
+                        renderHistoryList();
+                    }
+                }, (error) => {
+                    console.error("Erro Firebase Zap History:", error);
+                });
             }
+        });
+
+        window.startNewBatch = function(mode) {
+            initAudio(); 
+            const name = document.getElementById('newUserName').value.trim();
+            if (!name) return window.showToast("Por favor, digite o nome do usuário.", "bg-red-500", "fa-exclamation-triangle");
             
             currentBatchUser = name;
             currentUserNameEl.innerText = name;
@@ -680,7 +751,7 @@
         };
 
         window.finalizeBatch = function() {
-            if (confirm("Deseja finalizar este lote e fechar a sessão?")) {
+            if (confirm("Deseja finalizar este lote e fechar a sessão do usuário?")) {
                 currentBatchUser = null;
                 userSection.classList.add('hidden');
                 startSection.classList.remove('hidden');
@@ -690,74 +761,66 @@
         };
 
         window.handleManualInput = function() {
-            window.initAudio();
-            const code = barcodeInput.value;
-            if (code) window.processCode(code);
+            initAudio();
+            const code = barcodeInput.value.trim();
+            if (code) processCode(code);
             barcodeInput.value = "";
             barcodeInput.focus();
         };
 
         barcodeInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') window.handleManualInput(); });
 
-        window.processCode = function(code) {
-            code = String(code).trim();
-            if (!code) return;
+        async function processCode(code) {
+            if (!code || !currentUser || !pacotesRef) return;
             
-            if (!/^[A-Za-z0-9\-_.\s]+$/.test(code)) {
+            if (!/^[A-Za-z0-9\-_.]+$/.test(code)) {
                 window.showToast("Caracteres inválidos detectados!", "bg-orange-500", "fa-exclamation-triangle");
-                window.playBeep(false); 
+                if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
+                playBeep(false); 
                 return;
             }
 
-            let isReturn = false;
-            let pkgData = null;
+            const docRef = doc(pacotesRef, code);
 
-            if (isConferenceMode) {
-                const pkgIndex = allPackages.findIndex(p => p.id === code);
-                if (pkgIndex !== -1) {
-                    if (allPackages[pkgIndex].status === 'done') {
-                        window.showToast("Este item já foi devolvido.", "bg-yellow-500", "fa-exclamation-triangle");
-                        window.playBeep(false);
-                        return;
+            try {
+                if (isConferenceMode) {
+                    const pkg = allPackages.find(p => p.id === code);
+                    if (pkg) {
+                        if (pkg.status === 'done') {
+                            window.showToast("Este item já foi devolvido.", "bg-yellow-500", "fa-exclamation-triangle");
+                            playBeep(false);
+                        } else {
+                            await setDoc(docRef, { status: 'done', time: "Devolvido às " + new Date().toLocaleTimeString() }, { merge: true });
+                            window.showToast("Devolução OK: " + code, "bg-green-600", "fa-check");
+                            playBeep(true);
+                        }
                     } else {
-                        pkgData = { ...allPackages[pkgIndex], status: 'done', time: "Devolvido às " + new Date().toLocaleTimeString() };
-                        allPackages[pkgIndex] = pkgData; 
-                        isReturn = true;
+                        await setDoc(docRef, { id: code, user: 'EXTRA', status: 'extra', time: new Date().toLocaleTimeString(), timestamp: Date.now() });
+                        window.showToast("Pacote EXTRA detectado!", "bg-purple-600", "fa-star");
+                        playBeep(true); 
                     }
                 } else {
-                    pkgData = { id: code, user: currentBatchUser || 'EXTRA', status: 'extra', time: new Date().toLocaleTimeString(), timestamp: Date.now() };
-                    allPackages.unshift(pkgData); 
+                    if (!currentBatchUser) return;
+                    if (allPackages.some(p => p.id === code)) {
+                        window.showToast("Código já registrado nesta lista.", "bg-yellow-500", "fa-exclamation-triangle");
+                        playBeep(false);
+                    } else {
+                        await setDoc(docRef, { id: code, user: currentBatchUser, status: 'out', time: new Date().toLocaleTimeString(), timestamp: Date.now() });
+                        window.showToast("Adicionado: " + code, "bg-blue-600", "fa-plus");
+                        playBeep(true); 
+                    }
                 }
-            } else {
-                if (!currentBatchUser) {
-                    window.showToast("Inicie um lote primeiro!", "bg-red-500");
-                    window.playBeep(false);
-                    return;
-                }
-                if (allPackages.some(p => p.id === code)) {
-                    window.showToast("Código já registado.", "bg-yellow-500", "fa-exclamation-triangle");
-                    window.playBeep(false);
-                    return;
-                } else {
-                    pkgData = { id: code, user: currentBatchUser, status: 'out', time: new Date().toLocaleTimeString(), timestamp: Date.now() };
-                    allPackages.unshift(pkgData); 
-                }
+            } catch(e) {
+                console.error("Erro salvando pacote:", e);
+                window.showToast("Erro ao comunicar com o servidor.", "bg-red-500");
+                playBeep(false);
             }
-
-            window.updateScanUI();
-            
-            if (isConferenceMode) {
-                window.showToast(isReturn ? `Devolução OK: ${code}` : "Pacote EXTRA detectado!", isReturn ? "bg-green-600" : "bg-purple-600", isReturn ? "fa-check" : "fa-star");
-            } else {
-                window.showToast("Adicionado: " + code, "bg-blue-600", "fa-plus");
-            }
-            window.playBeep(true);
             if (navigator.vibrate) navigator.vibrate(50);
-        };
+        }
 
-        window.updateScanUI = function() {
+        function updateScanUI() {
             if (allPackages.length === 0) {
-                listContainer.innerHTML = `<p class="p-12 text-center text-slate-400 dark:text-slate-500 italic">Lista vazia.</p>`;
+                listContainer.innerHTML = `<p class="p-12 text-center text-slate-400 dark:text-slate-500 italic">Nenhum pacote no sistema.</p>`;
             } else {
                 listContainer.innerHTML = allPackages.map(p => {
                     let statusClass = "bg-slate-100 dark:bg-zinc-800 text-slate-500 dark:text-gray-300";
@@ -786,7 +849,7 @@
             document.getElementById('statOk').innerText = allPackages.filter(p => p.status === 'done').length;
             document.getElementById('statPending').innerText = allPackages.filter(p => p.status === 'pending').length;
             document.getElementById('listCount').innerText = allPackages.length + " itens";
-        };
+        }
 
         window.exportData = function() {
             if (allPackages.length === 0) return window.showToast("Sem dados para salvar.", "bg-red-500", "fa-exclamation-triangle");
@@ -808,6 +871,8 @@
                 const lines = ev.target.result.split('\n');
                 if (lines[0].trim() !== "LOGISTICA_PRO_V1") return window.showToast("Arquivo incompatível!", "bg-red-500", "fa-times-circle");
 
+                if (!currentUser || !pacotesRef) return window.showToast("Banco de dados desconectado", "bg-red-500");
+
                 const newPackages = [];
                 for (let i = 1; i < lines.length; i++) {
                     const line = lines[i].trim();
@@ -817,85 +882,119 @@
                 }
 
                 if (newPackages.length > 0) {
-                    allPackages = newPackages;
+                    window.showToast("Enviando para nuvem...", "bg-blue-600", "fa-cloud-upload-alt");
+                    
+                    for (const pkg of newPackages) {
+                        await setDoc(doc(pacotesRef, pkg.id), pkg, { merge: true });
+                    }
+
                     isConferenceMode = true;
                     modeIndicator.innerText = "Modo: Devolução";
                     modeIndicator.className = "text-xs font-bold uppercase tracking-widest text-green-600 mt-1";
                     currentBatchUser = null;
                     userSection.classList.add('hidden');
                     startSection.classList.remove('hidden');
-                    window.updateScanUI();
                     window.showToast("Importação finalizada!", "bg-green-600", "fa-check");
                 }
             };
             reader.readAsText(file);
         };
 
-        // ==========================================
-        // CÂMERA (HTML5-QR-CODE) Padrão Estável
-        // ==========================================
+        // ZXing Camera Control Avançado
         window.toggleCamera = async function() {
-            window.initAudio();
-            
-            if (isCameraActive) {
-                window.stopCamera();
-                return;
-            }
-
-            document.getElementById('camBtnText').innerText = "Iniciando...";
-            cameraContainer.classList.remove('hidden');
-            
-            if (!html5QrCode) {
-                html5QrCode = new Html5Qrcode("reader");
-            }
-
+            initAudio();
             try {
-                const config = { 
-                    fps: 10, 
-                    qrbox: { width: 250, height: 250 }
+                if (isCameraActive) {
+                    window.stopCamera();
+                    return;
+                }
+
+                document.getElementById('camBtnText').innerText = "Iniciando...";
+                cameraContainer.classList.remove('hidden');
+                
+                const hints = new Map();
+                hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [
+                    ZXing.BarcodeFormat.CODE_128,
+                    ZXing.BarcodeFormat.CODE_39,
+                    ZXing.BarcodeFormat.EAN_13,
+                    ZXing.BarcodeFormat.QR_CODE,
+                    ZXing.BarcodeFormat.ITF
+                ]);
+
+                if (!codeReader) {
+                    codeReader = new ZXing.BrowserMultiFormatReader(hints);
+                }
+
+                const constraints = {
+                    video: {
+                        facingMode: { ideal: "environment" },
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 }
+                    }
                 };
 
-                // Pede especificamente a câmera traseira do telemóvel
-                await html5QrCode.start({ facingMode: "environment" }, config, (text) => {
-                    const now = Date.now();
-                    // Debounce de 2 segundos para evitar duplo beep imediato
-                    if (text !== lastScannedCode || (now - lastScannedTime) > 2000) {
-                        lastScannedCode = text;
-                        lastScannedTime = now;
-                        window.processCode(text);
-                    }
-                });
-                
-                isCameraActive = true;
-                document.getElementById('camBtnText').innerText = "Parar Câmera";
+                startScanning(constraints);
+
             } catch (err) {
                 console.error("Erro câmera:", err);
-                window.showToast("Câmera bloqueada ou indisponível.", "bg-red-500", "fa-video-slash");
+                window.showToast("Câmera bloqueada ou não encontrada.", "bg-red-500", "fa-video-slash");
                 window.stopCamera();
             }
         };
 
+        function startScanning(constraints) {
+            codeReader.decodeFromConstraints(constraints, 'readerVideo', (result, err) => {
+                if (result) {
+                    const code = result.getText();
+                    const now = Date.now();
+                    
+                    if (code !== lastScannedCode || (now - lastScannedTime) > 2000) {
+                        lastScannedCode = code;
+                        lastScannedTime = now;
+                        processCode(code);
+                    }
+                }
+            }).then(() => {
+                setTimeout(() => {
+                    const videoEl = document.getElementById('readerVideo');
+                    if (videoEl && videoEl.srcObject) {
+                        const track = videoEl.srcObject.getVideoTracks()[0];
+                        const capabilities = track.getCapabilities();
+                        if (capabilities && capabilities.zoom) {
+                            const zoomValue = Math.min(2.0, capabilities.zoom.max);
+                            track.applyConstraints({
+                                advanced: [{ zoom: zoomValue }]
+                            }).catch(e => console.log("Zoom nativo ignorado"));
+                        }
+                    }
+                }, 500);
+            }).catch(err => {
+                console.error("Erro no feed da câmera:", err);
+                window.showToast("Erro ao abrir feed da câmera.", "bg-red-500", "fa-video-slash");
+                window.stopCamera();
+            });
+
+            isCameraActive = true;
+            document.getElementById('camBtnText').innerText = "Parar Câmera";
+        }
+
         window.stopCamera = function() {
-            if (html5QrCode && isCameraActive) {
-                html5QrCode.stop().then(() => {
-                    isCameraActive = false;
-                    cameraContainer.classList.add('hidden');
-                    const btnTxt = document.getElementById('camBtnText');
-                    if(btnTxt) btnTxt.innerText = "Ativar Câmera";
-                }).catch(err => {
-                    isCameraActive = false;
-                    cameraContainer.classList.add('hidden');
-                });
-            } else {
-                isCameraActive = false;
-                cameraContainer.classList.add('hidden');
-                const btnTxt = document.getElementById('camBtnText');
-                if(btnTxt) btnTxt.innerText = "Ativar Câmera";
-            }
+            if (codeReader) codeReader.reset();
+            isCameraActive = false;
+            cameraContainer.classList.add('hidden');
+            const btnTxt = document.getElementById('camBtnText');
+            if (btnTxt) btnTxt.innerText = "Ativar Câmera";
         };
 
         window.resetEverything = async function() {
-            if (confirm("Apagar toda a operação e reiniciar do zero?")) {
+            if (confirm("Apagar toda a operação do servidor e reiniciar do zero?")) {
+                if(pacotesRef) {
+                    window.showToast("Limpando banco de dados...", "bg-blue-600");
+                    for (const pkg of allPackages) {
+                        await deleteDoc(doc(pacotesRef, pkg.id));
+                    }
+                }
+                
                 allPackages = [];
                 currentBatchUser = null;
                 isConferenceMode = false;
@@ -904,7 +1003,7 @@
                 userSection.classList.add('hidden');
                 startSection.classList.remove('hidden');
                 window.stopCamera();
-                window.updateScanUI();
+                updateScanUI();
                 document.getElementById('uploadInput').value = "";
                 window.showToast("Tudo limpo!", "bg-green-600");
             }
