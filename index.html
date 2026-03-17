@@ -68,6 +68,15 @@
         
         .animate-pulse-slow { animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
         @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .5; } }
+
+        /* Animação do Scanner Laser */
+        @keyframes scan-laser {
+            0%, 100% { transform: translateY(-50px); }
+            50% { transform: translateY(50px); }
+        }
+        .laser-line {
+            animation: scan-laser 2s ease-in-out infinite;
+        }
     </style>
 </head>
 <body class="bg-gray-100 dark:bg-black text-gray-800 dark:text-gray-100 min-h-screen flex flex-col transition-colors duration-300">
@@ -288,12 +297,20 @@
             </div>
         </div>
 
-        <!-- Container da Câmera (Uso de Vídeo Nativo p/ ZXing com os atributos corretos p/ Mobile) -->
+        <!-- Container da Câmera (Com Mira de Escaneamento) -->
         <div id="cameraContainer" class="hidden mb-6 bg-black rounded-2xl overflow-hidden shadow-2xl relative min-h-[300px] flex items-center justify-center">
-            <video id="readerVideo" class="w-full h-full object-cover min-h-[300px]" autoplay muted playsinline></video>
-            <div class="absolute top-4 right-4 z-10 flex gap-2">
-                <select id="camSelect" class="bg-black/60 text-white text-xs p-2 rounded-lg border border-white/20 outline-none hidden"></select>
-                <button onclick="stopCamera()" class="bg-red-500/90 hover:bg-red-500 text-white p-2 rounded-lg transition-colors shadow-lg">
+            <video id="readerVideo" class="w-full h-full object-cover min-h-[300px] scale-105" autoplay muted playsinline></video>
+            
+            <!-- Retículo de Mira -->
+            <div class="absolute inset-0 pointer-events-none border-[40px] border-black/50 z-10 flex items-center justify-center">
+                <div class="w-full h-32 border-2 border-green-500/80 relative rounded-md">
+                    <!-- Linha do Scanner Animada -->
+                    <div class="laser-line absolute top-1/2 left-0 w-full h-[2px] bg-green-400 shadow-[0_0_10px_rgba(74,222,128,1)]"></div>
+                </div>
+            </div>
+
+            <div class="absolute top-4 right-4 z-20 flex gap-2 pointer-events-auto">
+                <button onclick="stopCamera()" class="bg-red-500 hover:bg-red-600 text-white w-10 h-10 rounded-full flex items-center justify-center transition-colors shadow-lg border border-red-400">
                     <i class="fas fa-times"></i>
                 </button>
             </div>
@@ -381,7 +398,7 @@
 
     <script>
         // ==========================================
-        // ÁUDIO (BIPE) - API Nativa
+        // ÁUDIO (BIPE) - MELHORADO
         // ==========================================
         let globalAudioCtx = null;
         
@@ -391,7 +408,6 @@
                 if (!globalAudioCtx && AudioContext) {
                     globalAudioCtx = new AudioContext();
                 }
-                // Desbloqueia o audio context (necessário no iOS/Chrome)
                 if (globalAudioCtx && globalAudioCtx.state === 'suspended') {
                     globalAudioCtx.resume();
                 }
@@ -404,18 +420,30 @@
                 const osc = globalAudioCtx.createOscillator();
                 const gainNode = globalAudioCtx.createGain();
                 
-                // Som de sucesso (agudo e rápido), Som de erro/duplicado (grave e mais longo)
-                osc.type = isSuccess ? 'sine' : 'square';
-                osc.frequency.setValueAtTime(isSuccess ? 800 : 300, globalAudioCtx.currentTime);
-                
-                gainNode.gain.setValueAtTime(0.1, globalAudioCtx.currentTime); // Volume baixo para não estourar
-                gainNode.gain.exponentialRampToValueAtTime(0.001, globalAudioCtx.currentTime + (isSuccess ? 0.1 : 0.3));
-                
-                osc.connect(gainNode);
-                gainNode.connect(globalAudioCtx.destination);
-                
-                osc.start();
-                osc.stop(globalAudioCtx.currentTime + (isSuccess ? 0.1 : 0.3));
+                if (isSuccess) {
+                    // Muito mais alto e agudo (Bipe típico de laser)
+                    osc.type = 'square';
+                    osc.frequency.setValueAtTime(2000, globalAudioCtx.currentTime);
+                    gainNode.gain.setValueAtTime(0.8, globalAudioCtx.currentTime); 
+                    gainNode.gain.exponentialRampToValueAtTime(0.01, globalAudioCtx.currentTime + 0.15);
+                    
+                    osc.connect(gainNode);
+                    gainNode.connect(globalAudioCtx.destination);
+                    osc.start();
+                    osc.stop(globalAudioCtx.currentTime + 0.15);
+                } else {
+                    // Som de erro grave e prolongado
+                    osc.type = 'sawtooth';
+                    osc.frequency.setValueAtTime(200, globalAudioCtx.currentTime);
+                    osc.frequency.setValueAtTime(150, globalAudioCtx.currentTime + 0.2);
+                    gainNode.gain.setValueAtTime(0.8, globalAudioCtx.currentTime);
+                    gainNode.gain.exponentialRampToValueAtTime(0.01, globalAudioCtx.currentTime + 0.4);
+                    
+                    osc.connect(gainNode);
+                    gainNode.connect(globalAudioCtx.destination);
+                    osc.start();
+                    osc.stop(globalAudioCtx.currentTime + 0.4);
+                }
             } catch(e) { console.log("Áudio não suportado"); }
         }
 
@@ -656,7 +684,7 @@
         }
 
         // ==========================================
-        // LÓGICA VIEW 2: SCAN PCT (ZXing Loader)
+        // LÓGICA VIEW 2: SCAN PCT (ZXing Avançado)
         // ==========================================
         let allPackages = [];
         let currentBatchUser = null;
@@ -676,7 +704,7 @@
         const cameraContainer = document.getElementById('cameraContainer');
 
         function startNewBatch(mode) {
-            initAudio(); // Inicia permissão de áudio
+            initAudio(); // Inicia permissão de áudio para o scanner
             const name = document.getElementById('newUserName').value.trim();
             if (!name) return showToast("Por favor, digite o nome do usuário.", "bg-red-500", "fa-exclamation-triangle");
             
@@ -726,14 +754,8 @@
         barcodeInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') handleManualInput(); });
 
         function processCode(code) {
-            // VALIDAÇÃO: Aceita letras, numeros, hifens, pontos e sublinhados
-            if (!/^[A-Za-z0-9\-_.]+$/.test(code)) {
-                showToast("Caracteres inválidos detectados!", "bg-orange-500", "fa-exclamation-triangle");
-                if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
-                playBeep(false); // Bipe de erro
-                return;
-            }
-
+            if (!code) return;
+            
             if (isConferenceMode) {
                 const pkg = allPackages.find(p => p.id === code);
                 if (pkg) {
@@ -842,9 +864,9 @@
             reader.readAsText(file);
         }
 
-        // ZXing Camera Control
+        // ZXing Camera Control Avançado
         async function toggleCamera() {
-            initAudio(); // Inicia permissão de áudio para o bipe funcionar no scanner
+            initAudio();
             try {
                 if (isCameraActive) {
                     stopCamera();
@@ -854,58 +876,70 @@
                 document.getElementById('camBtnText').innerText = "Iniciando...";
                 cameraContainer.classList.remove('hidden');
                 
+                // Configuração para aumentar velocidade focando apenas nos códigos comuns de entrega
+                const hints = new Map();
+                hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [
+                    ZXing.BarcodeFormat.CODE_128,
+                    ZXing.BarcodeFormat.CODE_39,
+                    ZXing.BarcodeFormat.EAN_13,
+                    ZXing.BarcodeFormat.QR_CODE,
+                    ZXing.BarcodeFormat.ITF
+                ]);
+
                 if (!codeReader) {
-                    codeReader = new ZXing.BrowserMultiFormatReader();
+                    codeReader = new ZXing.BrowserMultiFormatReader(hints);
                 }
 
-                const videoInputDevices = await codeReader.listVideoInputDevices();
-                
-                if (videoInputDevices && videoInputDevices.length > 0) {
-                    const select = document.getElementById('camSelect');
-                    select.classList.remove('hidden');
-                    
-                    let selectedDeviceId = videoInputDevices[0].deviceId;
-                    // Procura preferencialmente câmera traseira
-                    const backCamera = videoInputDevices.find(d => d.label.toLowerCase().includes('back') || d.label.toLowerCase().includes('traseira') || d.label.toLowerCase().includes('environment'));
-                    if (backCamera) selectedDeviceId = backCamera.deviceId;
+                // Força o uso da câmera traseira e tenta puxar em alta resolução (HD)
+                const constraints = {
+                    video: {
+                        facingMode: { ideal: "environment" },
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 }
+                    }
+                };
 
-                    select.innerHTML = videoInputDevices.map(d => `<option value="${d.deviceId}">${d.label || 'Câmera ' + d.deviceId}</option>`).join('');
-                    select.value = selectedDeviceId;
-
-                    startScanning(selectedDeviceId);
-
-                    select.onchange = () => {
-                        codeReader.reset();
-                        startScanning(select.value);
-                    };
-                } else {
-                    // Fallback tenta abrir câmera primária sem deviceId
-                    startScanning(undefined);
-                }
+                startScanning(constraints);
 
             } catch (err) {
                 console.error("Erro câmera:", err);
-                showToast("Permissão negada ou sem câmera.", "bg-red-500", "fa-video-slash");
+                showToast("Câmera bloqueada ou não encontrada.", "bg-red-500", "fa-video-slash");
                 stopCamera();
             }
         }
 
-        function startScanning(deviceId) {
-            codeReader.decodeFromVideoDevice(deviceId, 'readerVideo', (result, err) => {
+        function startScanning(constraints) {
+            codeReader.decodeFromConstraints(constraints, 'readerVideo', (result, err) => {
                 if (result) {
                     const code = result.getText();
                     const now = Date.now();
                     
-                    // Sistema anti-flood (Debounce de 2 segundos) para o mesmo código lido repetidas vezes
+                    // Previne leitura duplicada imediata (aguarda 2 segundos para o mesmo código)
                     if (code !== lastScannedCode || (now - lastScannedTime) > 2000) {
                         lastScannedCode = code;
                         lastScannedTime = now;
                         processCode(code);
                     }
                 }
+            }).then(() => {
+                // Tenta forçar Zoom Óptico caso o celular suporte
+                setTimeout(() => {
+                    const videoEl = document.getElementById('readerVideo');
+                    if (videoEl && videoEl.srcObject) {
+                        const track = videoEl.srcObject.getVideoTracks()[0];
+                        const capabilities = track.getCapabilities();
+                        if (capabilities && capabilities.zoom) {
+                            // Aplica Zoom de até 2x para focar melhor no código de barras
+                            const zoomValue = Math.min(2.0, capabilities.zoom.max);
+                            track.applyConstraints({
+                                advanced: [{ zoom: zoomValue }]
+                            }).catch(e => console.log("Zoom não suportado nativamente"));
+                        }
+                    }
+                }, 500);
             }).catch(err => {
                 console.error("Erro no feed da câmera:", err);
-                showToast("Erro ao conectar na câmera.", "bg-red-500", "fa-video-slash");
+                showToast("Erro ao abrir feed da câmera.", "bg-red-500", "fa-video-slash");
                 stopCamera();
             });
 
