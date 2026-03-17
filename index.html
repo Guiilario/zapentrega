@@ -257,29 +257,35 @@
             
             <div class="flex gap-2">
                 <input type="text" id="barcodeInput" inputmode="numeric" pattern="[0-9]*" placeholder="Bipar apenas números..." 
-                       class="flex-1 p-3 bg-blue-700 border-none rounded-xl text-white placeholder-blue-300 focus:ring-2 focus:ring-white outline-none">
+                       class="flex-1 p-3 bg-black/20 border-none rounded-xl text-white placeholder-blue-100 focus:ring-2 focus:ring-white outline-none">
                 <button onclick="handleManualInput()" class="bg-white/20 hover:bg-white/30 p-3 rounded-xl transition-all">
                     <i class="fas fa-arrow-right"></i>
                 </button>
             </div>
 
-            <button onclick="toggleCamera()" id="camBtn" class="mt-4 w-full py-3 bg-blue-500/50 rounded-xl font-semibold flex items-center justify-center gap-2 hover:bg-blue-500/70 transition-all">
+            <button onclick="toggleCamera()" id="camBtn" class="mt-4 w-full py-3 bg-black/20 rounded-xl font-semibold flex items-center justify-center gap-2 hover:bg-black/30 transition-all">
                 <i class="fas fa-camera"></i> <span id="camBtnText">Ativar Câmera</span>
             </button>
         </div>
 
-        <!-- Botão Iniciar Novo Lote -->
+        <!-- Botões Iniciar Lotes -->
         <div id="startSection" class="bg-white dark:bg-zinc-900 rounded-2xl p-8 shadow-sm border border-gray-200 dark:border-zinc-700 text-center transition-colors">
             <div class="mb-4 bg-blue-50 dark:bg-blue-900/30 w-16 h-16 rounded-full flex items-center justify-center mx-auto text-blue-600 dark:text-blue-400">
                 <i class="fas fa-box-open text-2xl"></i>
             </div>
-            <h3 class="text-xl font-bold text-slate-800 dark:text-white">Novo Lote de Saída</h3>
-            <p class="text-slate-500 dark:text-slate-400 mb-6">Inicie uma nova bipagem vinculada a um usuário.</p>
+            <h3 class="text-xl font-bold text-slate-800 dark:text-white">Operação de Lote</h3>
+            <p class="text-slate-500 dark:text-slate-400 mb-6">Inicie uma nova bipagem ou processe devoluções.</p>
             <input type="text" id="newUserName" placeholder="Nome do Usuário / Entregador" 
                    class="w-full p-4 mb-4 border border-gray-200 dark:border-zinc-700 bg-gray-50 dark:bg-zinc-800 text-gray-900 dark:text-white rounded-2xl text-center text-lg focus:ring-2 focus:ring-blue-500 outline-none transition-colors">
-            <button onclick="startNewBatch()" class="w-full py-4 bg-blue-600 text-white rounded-2xl font-bold shadow-lg hover:bg-blue-700 active:scale-95 transition-all">
-                Começar Bipagem
-            </button>
+            
+            <div class="flex gap-2">
+                <button onclick="startNewBatch('out')" class="flex-1 py-4 bg-blue-600 text-white rounded-2xl font-bold shadow-lg hover:bg-blue-700 active:scale-95 transition-all text-sm">
+                    Iniciar Lote
+                </button>
+                <button onclick="startNewBatch('return')" class="flex-1 py-4 bg-green-600 text-white rounded-2xl font-bold shadow-lg hover:bg-green-700 active:scale-95 transition-all text-sm">
+                    Devolver Lote
+                </button>
+            </div>
         </div>
 
         <!-- Container da Câmera (Uso de Vídeo Nativo p/ ZXing) -->
@@ -375,6 +381,32 @@
 
     <script>
         // ==========================================
+        // ÁUDIO (BIPE) - API Nativa
+        // ==========================================
+        function playBeep(isSuccess = true) {
+            try {
+                const AudioContext = window.AudioContext || window.webkitAudioContext;
+                if (!AudioContext) return;
+                const ctx = new AudioContext();
+                const osc = ctx.createOscillator();
+                const gainNode = ctx.createGain();
+                
+                // Som de sucesso (agudo e rápido), Som de erro/duplicado (grave e mais longo)
+                osc.type = isSuccess ? 'sine' : 'square';
+                osc.frequency.setValueAtTime(isSuccess ? 800 : 300, ctx.currentTime);
+                
+                gainNode.gain.setValueAtTime(0.1, ctx.currentTime); // Volume
+                gainNode.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + (isSuccess ? 0.1 : 0.3));
+                
+                osc.connect(gainNode);
+                gainNode.connect(ctx.destination);
+                
+                osc.start();
+                osc.stop(ctx.currentTime + (isSuccess ? 0.1 : 0.3));
+            } catch(e) { console.log("Áudio não suportado"); }
+        }
+
+        // ==========================================
         // ESTADOS GLOBAIS E NAVEGAÇÃO
         // ==========================================
         const sideMenu = document.getElementById('sideMenu');
@@ -403,7 +435,6 @@
             
             document.getElementById('view-' + viewName).classList.remove('hidden');
             
-            // Pausar câmera se sair do SCAN PCT
             if (viewName !== 'scan') stopCamera();
         }
 
@@ -445,7 +476,6 @@
             const toastMsg = document.getElementById('toastMsg');
             const toastIcon = document.getElementById('toastIcon');
             
-            // Remove cores anteriores e aplica nova cor
             toast.className = `fixed top-5 left-1/2 transform -translate-x-1/2 ${colorClass} text-white px-6 py-3 rounded-full shadow-2xl backdrop-blur-md transition-opacity duration-300 pointer-events-none z-[60] flex items-center gap-2 text-sm font-bold opacity-100`;
             
             toastIcon.className = `fas ${iconClass}`;
@@ -632,18 +662,33 @@
         const modeIndicator = document.getElementById('modeIndicator');
         const cameraContainer = document.getElementById('cameraContainer');
 
-        function startNewBatch() {
+        function startNewBatch(mode) {
             const name = document.getElementById('newUserName').value.trim();
             if (!name) return showToast("Por favor, digite o nome do usuário.", "bg-red-500", "fa-exclamation-triangle");
             
             currentBatchUser = name;
             currentUserNameEl.innerText = name;
+            
+            if (mode === 'return') {
+                isConferenceMode = true;
+                modeIndicator.innerText = "Modo: Devolução";
+                modeIndicator.className = "text-xs font-bold uppercase tracking-widest text-green-600 dark:text-green-400 mt-1";
+                userSection.classList.remove('bg-blue-600');
+                userSection.classList.add('bg-green-600');
+            } else {
+                isConferenceMode = false;
+                modeIndicator.innerText = "Modo: Registro de Saída";
+                modeIndicator.className = "text-xs font-bold uppercase tracking-widest text-slate-400 dark:text-slate-500 mt-1";
+                userSection.classList.remove('bg-green-600');
+                userSection.classList.add('bg-blue-600');
+            }
+
             startSection.classList.add('hidden');
             userSection.classList.remove('hidden');
             
             document.getElementById('newUserName').value = "";
             barcodeInput.focus();
-            showToast("Sessão iniciada para " + name, "bg-blue-600", "fa-check");
+            showToast("Sessão iniciada para " + name, isConferenceMode ? "bg-green-600" : "bg-blue-600", "fa-check");
         }
 
         function finalizeBatch() {
@@ -666,10 +711,11 @@
         barcodeInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') handleManualInput(); });
 
         function processCode(code) {
-            // VALIDAÇÃO: APENAS NÚMEROS E LETRAS (Código de Barras Padrão)
+            // VALIDAÇÃO: APENAS NÚMEROS E LETRAS
             if (!/^[A-Za-z0-9]+$/.test(code)) {
                 showToast("Apenas caracteres alfanuméricos são aceitos!", "bg-orange-500", "fa-exclamation-triangle");
                 if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
+                playBeep(false); // Bipe de erro
                 return;
             }
 
@@ -678,22 +724,27 @@
                 if (pkg) {
                     if (pkg.status === 'done') {
                         showToast("Este item já foi devolvido.", "bg-yellow-500", "fa-exclamation-triangle");
+                        playBeep(false); // Bipe de erro (já processado)
                     } else {
                         pkg.status = 'done';
                         pkg.time = "Devolvido às " + new Date().toLocaleTimeString();
                         showToast("Devolução OK: " + code, "bg-green-600", "fa-check");
+                        playBeep(true); // Bipe de sucesso
                     }
                 } else {
                     allPackages.unshift({ id: code, user: 'EXTRA', status: 'extra', time: new Date().toLocaleTimeString() });
                     showToast("Pacote EXTRA detectado!", "bg-purple-600", "fa-star");
+                    playBeep(true); // Bipe de sucesso
                 }
             } else {
                 if (!currentBatchUser) return;
                 if (allPackages.some(p => p.id === code)) {
                     showToast("Código já registrado nesta lista.", "bg-yellow-500", "fa-exclamation-triangle");
+                    playBeep(false); // Bipe de erro (duplicado)
                 } else {
                     allPackages.unshift({ id: code, user: currentBatchUser, status: 'out', time: new Date().toLocaleTimeString() });
                     showToast("Adicionado: " + code, "bg-blue-600", "fa-plus");
+                    playBeep(true); // Bipe de sucesso
                 }
             }
             updateScanUI();
