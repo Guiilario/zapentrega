@@ -66,6 +66,7 @@
         .row-pending { background-color: #fef2f2; border-left: 4px solid #ef4444; }
         .dark .row-pending { background-color: rgba(239, 68, 68, 0.1); border-left: 4px solid #ef4444; }
         #reader { width: 100% !important; border-radius: 12px; overflow: hidden; }
+        #reader video { object-fit: cover !important; }
         .animate-pulse-slow { animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
         @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .5; } }
     </style>
@@ -256,7 +257,7 @@
             </div>
             
             <div class="flex gap-2">
-                <input type="text" id="barcodeInput" placeholder="Bipar ou digitar código..." 
+                <input type="text" id="barcodeInput" inputmode="numeric" pattern="[0-9]*" placeholder="Bipar apenas números..." 
                        class="flex-1 p-3 bg-blue-700 border-none rounded-xl text-white placeholder-blue-300 focus:ring-2 focus:ring-white outline-none">
                 <button onclick="handleManualInput()" class="bg-white/20 hover:bg-white/30 p-3 rounded-xl transition-all">
                     <i class="fas fa-arrow-right"></i>
@@ -264,7 +265,7 @@
             </div>
 
             <button onclick="toggleCamera()" id="camBtn" class="mt-4 w-full py-3 bg-blue-500/50 rounded-xl font-semibold flex items-center justify-center gap-2 hover:bg-blue-500/70 transition-all">
-                <i class="fas fa-camera"></i> Escaneamento via Câmera
+                <i class="fas fa-camera"></i> <span id="camBtnText">Ativar Câmera</span>
             </button>
         </div>
 
@@ -285,23 +286,26 @@
         <!-- Container da Câmera -->
         <div id="cameraContainer" class="hidden mb-6 bg-black rounded-2xl overflow-hidden shadow-2xl relative">
             <div id="reader"></div>
-            <div class="absolute top-4 right-4 z-10">
-                <select id="camSelect" class="bg-black/50 text-white text-xs p-2 rounded-lg border border-white/20"></select>
+            <div class="absolute top-4 right-4 z-10 flex gap-2">
+                <select id="camSelect" class="bg-black/60 text-white text-xs p-2 rounded-lg border border-white/20 outline-none"></select>
+                <button onclick="stopCamera()" class="bg-red-500/80 hover:bg-red-500 text-white p-2 rounded-lg transition-colors">
+                    <i class="fas fa-times"></i>
+                </button>
             </div>
         </div>
 
         <!-- Estatísticas Rápidas -->
         <div class="grid grid-cols-3 gap-3 my-6">
             <div class="bg-white dark:bg-zinc-900 p-4 rounded-2xl border border-gray-200 dark:border-zinc-700 shadow-sm text-center transition-colors">
-                <span class="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase">Total</span>
+                <span class="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-tighter">Total</span>
                 <p id="statTotal" class="text-xl font-bold text-slate-800 dark:text-white">0</p>
             </div>
             <div class="bg-white dark:bg-zinc-900 p-4 rounded-2xl border border-gray-200 dark:border-zinc-700 shadow-sm text-center transition-colors">
-                <span class="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase">Voltou</span>
+                <span class="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-tighter">Voltou</span>
                 <p id="statOk" class="text-xl font-bold text-green-600 dark:text-green-500">0</p>
             </div>
             <div class="bg-white dark:bg-zinc-900 p-4 rounded-2xl border border-gray-200 dark:border-zinc-700 shadow-sm text-center transition-colors">
-                <span class="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase">Falta</span>
+                <span class="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-tighter">Falta</span>
                 <p id="statPending" class="text-xl font-bold text-red-500 dark:text-red-400">0</p>
             </div>
         </div>
@@ -313,7 +317,7 @@
             </button>
             <label class="flex-1 py-4 bg-white dark:bg-zinc-800 border border-gray-300 dark:border-zinc-600 text-slate-700 dark:text-gray-200 rounded-2xl font-bold flex items-center justify-center gap-2 cursor-pointer shadow-sm hover:bg-gray-50 dark:hover:bg-zinc-700 transition-colors">
                 <i class="fas fa-upload"></i> Upload
-                <input type="file" class="hidden" accept=".txt" onchange="importData(event)">
+                <input type="file" id="uploadInput" class="hidden" accept=".txt" onchange="importData(event)">
             </label>
         </div>
 
@@ -623,10 +627,11 @@
         const listContainer = document.getElementById('packageList');
         const barcodeInput = document.getElementById('barcodeInput');
         const modeIndicator = document.getElementById('modeIndicator');
+        const cameraContainer = document.getElementById('cameraContainer');
 
         function startNewBatch() {
             const name = document.getElementById('newUserName').value.trim();
-            if (!name) return showToast("Por favor, digite o nome do usuário.", "bg-red-500");
+            if (!name) return showToast("Por favor, digite o nome do usuário.", "bg-red-500", "fa-exclamation-triangle");
             
             currentBatchUser = name;
             currentUserNameEl.innerText = name;
@@ -644,7 +649,7 @@
                 userSection.classList.add('hidden');
                 startSection.classList.remove('hidden');
                 stopCamera();
-                showToast("Lote finalizado com sucesso.", "bg-slate-800");
+                showToast("Lote finalizado com sucesso.", "bg-slate-800", "fa-check");
             }
         }
 
@@ -658,6 +663,13 @@
         barcodeInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') handleManualInput(); });
 
         function processCode(code) {
+            // VALIDAÇÃO: APENAS NÚMEROS
+            if (!/^\d+$/.test(code)) {
+                showToast("Apenas números são aceitos!", "bg-orange-500", "fa-exclamation-triangle");
+                if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
+                return;
+            }
+
             if (isConferenceMode) {
                 const pkg = allPackages.find(p => p.id === code);
                 if (pkg) {
@@ -702,7 +714,7 @@
                         <div class="p-4 flex justify-between items-center transition-all border-b border-gray-100 dark:border-zinc-800 last:border-0 ${rowClass}">
                             <div class="flex-1">
                                 <div class="flex items-center gap-2">
-                                    <span class="font-mono font-bold text-slate-700 dark:text-gray-200">${p.id}</span>
+                                    <span class="font-mono font-bold text-slate-700 dark:text-gray-200 tracking-tight">${p.id}</span>
                                     <span class="text-[10px] font-bold px-1.5 py-0.5 rounded ${statusClass}">${label}</span>
                                 </div>
                                 <p class="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5">Responsável: <span class="font-bold text-slate-500 dark:text-gray-400">${p.user}</span> • ${p.time}</p>
@@ -719,7 +731,7 @@
         }
 
         function exportData() {
-            if (allPackages.length === 0) return showToast("Sem dados para salvar.", "bg-red-500");
+            if (allPackages.length === 0) return showToast("Sem dados para salvar.", "bg-red-500", "fa-exclamation-triangle");
             let content = "LOGISTICA_PRO_V1\n";
             allPackages.forEach(p => { content += `${p.user};${p.id}\n`; });
             const blob = new Blob([content], { type: 'text/plain' });
@@ -736,7 +748,7 @@
             const reader = new FileReader();
             reader.onload = (ev) => {
                 const lines = ev.target.result.split('\n');
-                if (lines[0].trim() !== "LOGISTICA_PRO_V1") return showToast("Formato de arquivo incompatível!", "bg-red-500");
+                if (lines[0].trim() !== "LOGISTICA_PRO_V1") return showToast("Arquivo incompatível!", "bg-red-500", "fa-times-circle");
 
                 const newPackages = [];
                 for (let i = 1; i < lines.length; i++) {
@@ -755,43 +767,77 @@
                     userSection.classList.add('hidden');
                     startSection.classList.remove('hidden');
                     updateScanUI();
-                    showToast("Lista carregada para devolução!", "bg-green-600", "fa-check");
+                    showToast("Lista carregada!", "bg-green-600", "fa-check");
                 }
             };
             reader.readAsText(file);
         }
 
         async function toggleCamera() {
-            const container = document.getElementById('cameraContainer');
-            if (html5QrCode && html5QrCode.getState() === 2) { stopCamera(); return; }
-            container.classList.remove('hidden');
-            html5QrCode = new Html5Qrcode("reader");
+            if (html5QrCode && html5QrCode.getState() === 2) {
+                stopCamera();
+                return;
+            }
+
+            cameraContainer.classList.remove('hidden');
+            
+            if (!html5QrCode) {
+                html5QrCode = new Html5Qrcode("reader");
+            }
+
             try {
                 const devices = await Html5Qrcode.getCameras();
-                const select = document.getElementById('camSelect');
-                select.innerHTML = devices.map(d => `<option value="${d.id}">${d.label}</option>`).join('');
-                const config = { fps: 15, qrbox: 250 };
-                await html5QrCode.start(devices[0].id, config, (text) => processCode(text));
-                select.onchange = async () => {
-                    await html5QrCode.stop();
-                    await html5QrCode.start(select.value, config, (text) => processCode(text));
-                };
+                
+                if (devices && devices.length > 0) {
+                    const select = document.getElementById('camSelect');
+                    select.innerHTML = devices.map(d => `<option value="${d.id}">${d.label || 'Câmera ' + d.id}</option>`).join('');
+                    
+                    const config = { 
+                        fps: 15, 
+                        qrbox: { width: 250, height: 250 },
+                        aspectRatio: 1.0
+                    };
+
+                    const lastCamera = devices[devices.length - 1]; 
+                    await html5QrCode.start(lastCamera.id, config, (text) => processCode(text));
+                    
+                    document.getElementById('camBtnText').innerText = "Parar Câmera";
+                    select.value = lastCamera.id;
+
+                    select.onchange = async () => {
+                        await html5QrCode.stop();
+                        await html5QrCode.start(select.value, config, (text) => processCode(text));
+                    };
+                } else {
+                    showToast("Nenhuma câmera encontrada.", "bg-red-500", "fa-video-slash");
+                    cameraContainer.classList.add('hidden');
+                }
             } catch (err) {
-                showToast("Erro ao abrir câmera.", "bg-red-500");
-                container.classList.add('hidden');
+                console.error("Erro câmera:", err);
+                showToast("Câmera bloqueada ou indisponível.", "bg-red-500", "fa-video-slash");
+                cameraContainer.classList.add('hidden');
             }
         }
 
         function stopCamera() {
             if (html5QrCode && html5QrCode.getState() === 2) {
                 html5QrCode.stop().then(() => {
-                    document.getElementById('cameraContainer').classList.add('hidden');
-                }).catch(() => {});
+                    cameraContainer.classList.add('hidden');
+                    const btnTxt = document.getElementById('camBtnText');
+                    if(btnTxt) btnTxt.innerText = "Ativar Câmera";
+                }).catch(err => {
+                    console.warn("Erro ao parar:", err);
+                    cameraContainer.classList.add('hidden');
+                });
+            } else {
+                cameraContainer.classList.add('hidden');
+                const btnTxt = document.getElementById('camBtnText');
+                if(btnTxt) btnTxt.innerText = "Ativar Câmera";
             }
         }
 
         function resetEverything() {
-            if (confirm("Deseja fechar e apagar dados do Scan PCT?")) {
+            if (confirm("Apagar todos os dados e reiniciar?")) {
                 allPackages = [];
                 currentBatchUser = null;
                 isConferenceMode = false;
@@ -801,7 +847,7 @@
                 startSection.classList.remove('hidden');
                 stopCamera();
                 updateScanUI();
-                showToast("Sessão encerrada.", "bg-slate-800");
+                document.getElementById('uploadInput').value = "";
             }
         }
     </script>
