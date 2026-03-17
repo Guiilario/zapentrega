@@ -214,15 +214,14 @@
 
 
     <!-- ========================================== -->
-    <!-- VIEW 2: SCAN PCT -->
+    <!-- VIEW 2: SCAN PCT (Totalmente Local para Teste) -->
     <!-- ========================================== -->
     <main id="view-scan" class="w-full max-w-2xl mx-auto p-4 pt-24 animate-fade-in relative z-10 hidden pb-20">
         
         <header class="flex justify-between items-center mb-6 bg-white dark:bg-zinc-900 p-6 rounded-2xl shadow-sm border border-gray-200 dark:border-zinc-700 transition-colors">
             <div>
                 <h1 class="text-2xl font-bold text-slate-800 dark:text-white tracking-tight">Logística <span class="text-blue-600">Pro</span></h1>
-                <p id="modeIndicator" class="text-xs font-bold uppercase tracking-widest text-slate-400 dark:text-slate-500 mt-1">Modo: Aguardando Operação</p>
-                <span id="cloudStatus" class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-700 mt-2 inline-block">Conectando Servidor...</span>
+                <p id="modeIndicator" class="text-xs font-bold uppercase tracking-widest text-slate-400 dark:text-slate-500 mt-1">Modo: Registro de Saída</p>
             </div>
             <button onclick="window.resetEverything()" class="p-2 text-slate-400 hover:text-red-500 dark:hover:text-red-400 transition-colors">
                 <i class="fas fa-sign-out-alt text-2xl"></i>
@@ -274,7 +273,7 @@
             </div>
         </div>
 
-        <!-- Câmera Scanner Padrão Otimizada -->
+        <!-- Câmera Scanner Padrão (Sem Firebase) -->
         <div id="cameraContainer" class="hidden mb-6 bg-black rounded-2xl overflow-hidden shadow-2xl relative">
             <div id="reader" class="w-full"></div>
             
@@ -312,7 +311,7 @@
 
         <div class="bg-white dark:bg-zinc-900 rounded-2xl shadow-sm border border-gray-200 dark:border-zinc-700 overflow-hidden transition-colors">
             <div class="p-4 bg-slate-50 dark:bg-zinc-800 border-b border-gray-200 dark:border-zinc-700 flex justify-between items-center transition-colors">
-                <span class="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Registros (Nuvem)</span>
+                <span class="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Registros (Local)</span>
                 <span id="listCount" class="text-xs font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 px-2 py-1 rounded">0 itens</span>
             </div>
             <div id="packageList" class="divide-y divide-gray-100 dark:divide-zinc-800 max-h-[400px] overflow-y-auto">
@@ -320,7 +319,6 @@
             </div>
         </div>
     </main>
-
 
     <!-- ========================================== -->
     <!-- MODAIS E TOASTS GLOBAIS -->
@@ -357,49 +355,8 @@
         <span id="toastMsg">Mensagem</span>
     </div>
 
-    <!-- Módulo Firebase + App Core Script -->
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-        import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
-        import { getFirestore, collection, onSnapshot, doc, setDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
-
-        // ==========================================
-        // SETUP FIREBASE 
-        // ==========================================
-        const userFirebaseConfig = {
-            apiKey: "AIzaSyC05tYoKOHOBf6pNhhmMqgSap1g3iB4Im4",
-            authDomain: "logistica-pacotes.firebaseapp.com",
-            projectId: "logistica-pacotes",
-            storageBucket: "logistica-pacotes.firebasestorage.app",
-            messagingSenderId: "1075697583297",
-            appId: "1:1075697583297:web:e5449efc5e8e5cf08d4040"
-        };
-        
-        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : userFirebaseConfig;
-        const app = initializeApp(firebaseConfig);
-        const auth = getAuth(app);
-        const db = getFirestore(app);
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'logistica-pro';
-        
-        let currentUser = null;
-        let pacotesRef = null;
-        let zapHistoryRef = null;
-        const cloudStatus = document.getElementById('cloudStatus');
-
-        const initAuth = async () => {
-            try {
-                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                    await signInWithCustomToken(auth, __initial_auth_token);
-                } else {
-                    await signInAnonymously(auth);
-                }
-            } catch(e) {
-                cloudStatus.innerText = "Modo Offline (Sem Conexão)";
-                cloudStatus.className = "text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-100 text-red-700 mt-2 inline-block";
-            }
-        };
-        initAuth();
-
+    <!-- Script Principal Completo (Sem módulos externos do Firebase) -->
+    <script>
         // ==========================================
         // ÁUDIO (BIPE)
         // ==========================================
@@ -429,7 +386,7 @@
                 
                 if (isSuccess) {
                     osc.type = 'square';
-                    osc.frequency.setValueAtTime(2500, window.globalAudioCtx.currentTime); // Som mais agudo e alto
+                    osc.frequency.setValueAtTime(2500, window.globalAudioCtx.currentTime); // Som agudo/alto
                     gainNode.gain.setValueAtTime(0.5, window.globalAudioCtx.currentTime); 
                     gainNode.gain.exponentialRampToValueAtTime(0.01, window.globalAudioCtx.currentTime + 0.1);
                     
@@ -513,9 +470,8 @@
         };
 
         // ==========================================
-        // ZAP SEM ADD
+        // ZAP SEM ADD (LocalStorage Total)
         // ==========================================
-        let zapHistory = [];
         const phoneInput = document.getElementById('phoneInput');
         const stopInput = document.getElementById('stopInput');
         const messageInput = document.getElementById('messageInput');
@@ -575,17 +531,14 @@
             }
         };
 
-        async function saveToHistory(number, stop) {
+        function saveToHistory(number, stop) {
+            let zapHistory = JSON.parse(localStorage.getItem('wa_full_history_v2') || '[]');
             const today = new Date().toLocaleDateString('pt-BR');
             const newHistoryItem = { phone: number, stop: stop, date: today, timestamp: Date.now() };
             
             zapHistory = zapHistory.filter(item => !(item.phone === number && item.date === today));
             zapHistory.unshift(newHistoryItem);
-            
-            if (currentUser && zapHistoryRef) {
-                const docId = `${number}_${today.replace(/\//g, '-')}`;
-                setDoc(doc(zapHistoryRef, docId), newHistoryItem).catch(e=>console.log(e));
-            }
+            localStorage.setItem('wa_full_history_v2', JSON.stringify(zapHistory));
         }
 
         window.openHistoryModal = function() { 
@@ -595,6 +548,7 @@
         window.closeHistoryModal = function() { historyModal.classList.add('hidden'); };
 
         function renderHistoryList() {
+            let zapHistory = JSON.parse(localStorage.getItem('wa_full_history_v2') || '[]');
             const today = new Date().toLocaleDateString('pt-BR');
             const todaysCalls = zapHistory.filter(item => item.date === today);
 
@@ -625,23 +579,18 @@
             });
         }
 
-        window.clearDailyHistory = async function() {
+        window.clearDailyHistory = function() {
             if(confirm("Deseja apagar todo o histórico de HOJE?")) {
+                let zapHistory = JSON.parse(localStorage.getItem('wa_full_history_v2') || '[]');
                 const today = new Date().toLocaleDateString('pt-BR');
-                const todaysCalls = zapHistory.filter(item => item.date === today);
                 zapHistory = zapHistory.filter(item => item.date !== today); 
+                localStorage.setItem('wa_full_history_v2', JSON.stringify(zapHistory));
                 renderHistoryList();
-
-                if(zapHistoryRef) {
-                    for (const item of todaysCalls) {
-                        const docId = `${item.phone}_${today.replace(/\//g, '-')}`;
-                        deleteDoc(doc(zapHistoryRef, docId)).catch(e=>{});
-                    }
-                }
             }
         };
 
         window.saveHistoryPDF = function() {
+            let zapHistory = JSON.parse(localStorage.getItem('wa_full_history_v2') || '[]');
             const today = new Date().toLocaleDateString('pt-BR');
             const todaysCalls = zapHistory.filter(item => item.date === today);
             if (todaysCalls.length === 0) return window.showToast("Nada para salvar hoje.", "bg-yellow-500");
@@ -654,7 +603,8 @@
                 doc.setFontSize(10);
                 doc.text(`Total de chamadas: ${todaysCalls.length}`, 14, 28);
 
-                const tableData = [...todaysCalls].map(item => [
+                const chronologicalData = [...todaysCalls].reverse();
+                const tableData = chronologicalData.map(item => [
                     item.stop || '-', 
                     item.phone.replace(/^(\d{2})(\d{5})(\d{4})/, "($1) $2-$3"),
                     new Date(item.timestamp).toLocaleTimeString('pt-BR', {hour: '2-digit', minute:'2-digit'})
@@ -677,7 +627,7 @@
         };
 
         // ==========================================
-        // SCAN PCT + FIREBASE OTIMIZADO 
+        // SCAN PCT - TOTALMENTE LOCAL E SEGURO
         // ==========================================
         let allPackages = [];
         let currentBatchUser = null;
@@ -695,35 +645,6 @@
         const barcodeInput = document.getElementById('barcodeInput');
         const modeIndicator = document.getElementById('modeIndicator');
         const cameraContainer = document.getElementById('cameraContainer');
-
-        onAuthStateChanged(auth, user => {
-            currentUser = user;
-            if (user) {
-                cloudStatus.innerText = "Nuvem Conectada (Online)";
-                cloudStatus.className = "text-[10px] font-bold px-2 py-0.5 rounded-full bg-green-100 text-green-700 mt-2 inline-block";
-                
-                pacotesRef = collection(db, 'artifacts', appId, 'public', 'data', 'pacotes');
-                zapHistoryRef = collection(db, 'artifacts', appId, 'users', user.uid, 'zap_history');
-                
-                onSnapshot(pacotesRef, (snapshot) => {
-                    const packages = [];
-                    snapshot.forEach((d) => packages.push(d.data()));
-                    packages.sort((a, b) => b.timestamp - a.timestamp);
-                    allPackages = packages;
-                    window.updateScanUI();
-                });
-
-                onSnapshot(zapHistoryRef, (snapshot) => {
-                    const history = [];
-                    snapshot.forEach((d) => history.push(d.data()));
-                    history.sort((a, b) => b.timestamp - a.timestamp);
-                    zapHistory = history;
-                    if (!historyModal.classList.contains('hidden')) {
-                        renderHistoryList();
-                    }
-                });
-            }
-        });
 
         window.startNewBatch = function(mode) {
             window.initAudio(); 
@@ -782,7 +703,6 @@
             code = String(code).trim();
             if (!code) return;
             
-            // Permite letras, números, hifens, pontos, underscore e espaços (comuns em etiquetas de e-commerce)
             if (!/^[A-Za-z0-9\-_.\s]+$/.test(code)) {
                 window.showToast("Caracteres inválidos detectados!", "bg-orange-500", "fa-exclamation-triangle");
                 window.playBeep(false); 
@@ -792,7 +712,6 @@
             let isReturn = false;
             let pkgData = null;
 
-            // 1. Lógica Otimista Local (Para Interface Rápida)
             if (isConferenceMode) {
                 const pkgIndex = allPackages.findIndex(p => p.id === code);
                 if (pkgIndex !== -1) {
@@ -816,7 +735,7 @@
                     return;
                 }
                 if (allPackages.some(p => p.id === code)) {
-                    window.showToast("Código já registado nesta lista.", "bg-yellow-500", "fa-exclamation-triangle");
+                    window.showToast("Código já registado.", "bg-yellow-500", "fa-exclamation-triangle");
                     window.playBeep(false);
                     return;
                 } else {
@@ -825,7 +744,6 @@
                 }
             }
 
-            // 2. Feedback Visual e Sonoro
             window.updateScanUI();
             
             if (isConferenceMode) {
@@ -835,11 +753,6 @@
             }
             window.playBeep(true);
             if (navigator.vibrate) navigator.vibrate(50);
-
-            // 3. Sync em Background (Firebase)
-            if (currentUser && pacotesRef && pkgData) {
-                setDoc(doc(pacotesRef, code), pkgData, { merge: true }).catch(e => console.error("Falha ao salvar", e));
-            }
         };
 
         window.updateScanUI = function() {
@@ -904,16 +817,7 @@
                 }
 
                 if (newPackages.length > 0) {
-                    window.showToast("Sincronizando...", "bg-blue-600", "fa-cloud-upload-alt");
-                    
-                    if (currentUser && pacotesRef) {
-                        for (const pkg of newPackages) {
-                            setDoc(doc(pacotesRef, pkg.id), pkg, { merge: true }).catch(e=>{});
-                        }
-                    } else {
-                        allPackages = newPackages;
-                    }
-
+                    allPackages = newPackages;
                     isConferenceMode = true;
                     modeIndicator.innerText = "Modo: Devolução";
                     modeIndicator.className = "text-xs font-bold uppercase tracking-widest text-green-600 mt-1";
@@ -928,7 +832,7 @@
         };
 
         // ==========================================
-        // CÂMERA (HTML5-QR-CODE) Padrão
+        // CÂMERA (HTML5-QR-CODE) Padrão Estável
         // ==========================================
         window.toggleCamera = async function() {
             window.initAudio();
@@ -938,6 +842,7 @@
                 return;
             }
 
+            document.getElementById('camBtnText').innerText = "Iniciando...";
             cameraContainer.classList.remove('hidden');
             
             if (!html5QrCode) {
@@ -946,12 +851,11 @@
 
             try {
                 const config = { 
-                    fps: 15, 
-                    qrbox: { width: 250, height: 250 },
-                    aspectRatio: 1.0
+                    fps: 10, 
+                    qrbox: { width: 250, height: 250 }
                 };
 
-                // Pede especificamente a câmera traseira do telemóvel para não congelar
+                // Pede especificamente a câmera traseira do telemóvel
                 await html5QrCode.start({ facingMode: "environment" }, config, (text) => {
                     const now = Date.now();
                     // Debounce de 2 segundos para evitar duplo beep imediato
@@ -963,6 +867,7 @@
                 });
                 
                 isCameraActive = true;
+                document.getElementById('camBtnText').innerText = "Parar Câmera";
             } catch (err) {
                 console.error("Erro câmera:", err);
                 window.showToast("Câmera bloqueada ou indisponível.", "bg-red-500", "fa-video-slash");
@@ -975,6 +880,8 @@
                 html5QrCode.stop().then(() => {
                     isCameraActive = false;
                     cameraContainer.classList.add('hidden');
+                    const btnTxt = document.getElementById('camBtnText');
+                    if(btnTxt) btnTxt.innerText = "Ativar Câmera";
                 }).catch(err => {
                     isCameraActive = false;
                     cameraContainer.classList.add('hidden');
@@ -982,18 +889,13 @@
             } else {
                 isCameraActive = false;
                 cameraContainer.classList.add('hidden');
+                const btnTxt = document.getElementById('camBtnText');
+                if(btnTxt) btnTxt.innerText = "Ativar Câmera";
             }
         };
 
         window.resetEverything = async function() {
-            if (confirm("Apagar toda a operação do servidor e reiniciar do zero?")) {
-                if(currentUser && pacotesRef) {
-                    window.showToast("Limpando banco de dados...", "bg-blue-600");
-                    for (const pkg of allPackages) {
-                        deleteDoc(doc(pacotesRef, pkg.id)).catch(e=>{});
-                    }
-                }
-                
+            if (confirm("Apagar toda a operação e reiniciar do zero?")) {
                 allPackages = [];
                 currentBatchUser = null;
                 isConferenceMode = false;
