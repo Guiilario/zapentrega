@@ -16,10 +16,10 @@
     <!-- Font Awesome -->
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     
-    <!-- Bibliotecas de PDF e QR Code -->
+    <!-- Bibliotecas de PDF e QR Code (Versão estável) -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
-    <script src="https://unpkg.com/html5-qr-code"></script>
+    <script src="https://unpkg.com/html5-qr-code@2.3.8/html5-qrcode.min.js"></script>
 
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
@@ -284,11 +284,11 @@
         </div>
 
         <!-- Container da Câmera -->
-        <div id="cameraContainer" class="hidden mb-6 bg-black rounded-2xl overflow-hidden shadow-2xl relative">
-            <div id="reader"></div>
+        <div id="cameraContainer" class="hidden mb-6 bg-black rounded-2xl overflow-hidden shadow-2xl relative min-h-[300px] flex items-center justify-center">
+            <div id="reader" class="w-full"></div>
             <div class="absolute top-4 right-4 z-10 flex gap-2">
-                <select id="camSelect" class="bg-black/60 text-white text-xs p-2 rounded-lg border border-white/20 outline-none"></select>
-                <button onclick="stopCamera()" class="bg-red-500/80 hover:bg-red-500 text-white p-2 rounded-lg transition-colors">
+                <select id="camSelect" class="bg-black/60 text-white text-xs p-2 rounded-lg border border-white/20 outline-none hidden"></select>
+                <button onclick="stopCamera()" class="bg-red-500/90 hover:bg-red-500 text-white p-2 rounded-lg transition-colors shadow-lg">
                     <i class="fas fa-times"></i>
                 </button>
             </div>
@@ -620,6 +620,7 @@
         let currentBatchUser = null;
         let isConferenceMode = false;
         let html5QrCode = null;
+        let isCameraActive = false; // Controle seguro do estado da câmera
 
         const userSection = document.getElementById('userSection');
         const startSection = document.getElementById('startSection');
@@ -774,62 +775,80 @@
         }
 
         async function toggleCamera() {
-            if (html5QrCode && html5QrCode.getState() === 2) {
-                stopCamera();
-                return;
-            }
-
-            cameraContainer.classList.remove('hidden');
-            
-            if (!html5QrCode) {
-                html5QrCode = new Html5Qrcode("reader");
-            }
-
             try {
-                const devices = await Html5Qrcode.getCameras();
+                if (isCameraActive) {
+                    stopCamera();
+                    return;
+                }
+
+                document.getElementById('camBtnText').innerText = "Iniciando...";
+                cameraContainer.classList.remove('hidden');
+                
+                if (!html5QrCode) {
+                    html5QrCode = new Html5Qrcode("reader");
+                }
+
+                const config = { 
+                    fps: 10, 
+                    qrbox: { width: 250, height: 250 },
+                    aspectRatio: 1.0
+                };
+
+                let devices = [];
+                try {
+                    devices = await Html5Qrcode.getCameras();
+                } catch (e) {
+                    console.warn("Não foi possível listar as câmeras, tentando câmera traseira diretamente.", e);
+                }
                 
                 if (devices && devices.length > 0) {
                     const select = document.getElementById('camSelect');
+                    select.classList.remove('hidden');
                     select.innerHTML = devices.map(d => `<option value="${d.id}">${d.label || 'Câmera ' + d.id}</option>`).join('');
                     
-                    const config = { 
-                        fps: 15, 
-                        qrbox: { width: 250, height: 250 },
-                        aspectRatio: 1.0
-                    };
-
                     const lastCamera = devices[devices.length - 1]; 
                     await html5QrCode.start(lastCamera.id, config, (text) => processCode(text));
                     
-                    document.getElementById('camBtnText').innerText = "Parar Câmera";
                     select.value = lastCamera.id;
-
                     select.onchange = async () => {
-                        await html5QrCode.stop();
-                        await html5QrCode.start(select.value, config, (text) => processCode(text));
+                        if (isCameraActive) {
+                            await html5QrCode.stop();
+                            await html5QrCode.start(select.value, config, (text) => processCode(text));
+                        }
                     };
                 } else {
-                    showToast("Nenhuma câmera encontrada.", "bg-red-500", "fa-video-slash");
-                    cameraContainer.classList.add('hidden');
+                    // Fallback se "getCameras" falhar mas o acesso for permitido
+                    await html5QrCode.start({ facingMode: "environment" }, config, (text) => processCode(text));
                 }
+
+                isCameraActive = true;
+                document.getElementById('camBtnText').innerText = "Parar Câmera";
+
             } catch (err) {
                 console.error("Erro câmera:", err);
-                showToast("Câmera bloqueada ou indisponível.", "bg-red-500", "fa-video-slash");
+                showToast("Permissão de câmera negada ou erro.", "bg-red-500", "fa-video-slash");
                 cameraContainer.classList.add('hidden');
+                document.getElementById('camBtnText').innerText = "Ativar Câmera";
+                isCameraActive = false;
             }
         }
 
         function stopCamera() {
-            if (html5QrCode && html5QrCode.getState() === 2) {
+            if (html5QrCode && isCameraActive) {
                 html5QrCode.stop().then(() => {
+                    isCameraActive = false;
                     cameraContainer.classList.add('hidden');
                     const btnTxt = document.getElementById('camBtnText');
                     if(btnTxt) btnTxt.innerText = "Ativar Câmera";
                 }).catch(err => {
                     console.warn("Erro ao parar:", err);
+                    isCameraActive = false;
                     cameraContainer.classList.add('hidden');
+                    const btnTxt = document.getElementById('camBtnText');
+                    if(btnTxt) btnTxt.innerText = "Ativar Câmera";
                 });
             } else {
+                isCameraActive = false;
                 cameraContainer.classList.add('hidden');
                 const btnTxt = document.getElementById('camBtnText');
                 if(btnTxt) btnTxt.innerText = "Ativar Câmera";
