@@ -16,10 +16,10 @@
     <!-- Font Awesome -->
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     
-    <!-- Bibliotecas de PDF e QR Code (Versão estável) -->
+    <!-- Bibliotecas de PDF e ZXing (Leitor de Código de Barras mais robusto) -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
-    <script src="https://unpkg.com/html5-qr-code@2.3.8/html5-qrcode.min.js"></script>
+    <script type="text/javascript" src="https://unpkg.com/@zxing/library@latest/umd/index.min.js"></script>
 
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
@@ -65,8 +65,7 @@
         .dark .row-done { background-color: rgba(34, 197, 94, 0.1); border-left: 4px solid #22c55e; }
         .row-pending { background-color: #fef2f2; border-left: 4px solid #ef4444; }
         .dark .row-pending { background-color: rgba(239, 68, 68, 0.1); border-left: 4px solid #ef4444; }
-        #reader { width: 100% !important; border-radius: 12px; overflow: hidden; }
-        #reader video { object-fit: cover !important; }
+        
         .animate-pulse-slow { animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
         @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .5; } }
     </style>
@@ -283,9 +282,9 @@
             </button>
         </div>
 
-        <!-- Container da Câmera -->
+        <!-- Container da Câmera (Uso de Vídeo Nativo p/ ZXing) -->
         <div id="cameraContainer" class="hidden mb-6 bg-black rounded-2xl overflow-hidden shadow-2xl relative min-h-[300px] flex items-center justify-center">
-            <div id="reader" class="w-full"></div>
+            <video id="readerVideo" class="w-full h-full object-cover min-h-[300px]"></video>
             <div class="absolute top-4 right-4 z-10 flex gap-2">
                 <select id="camSelect" class="bg-black/60 text-white text-xs p-2 rounded-lg border border-white/20 outline-none hidden"></select>
                 <button onclick="stopCamera()" class="bg-red-500/90 hover:bg-red-500 text-white p-2 rounded-lg transition-colors shadow-lg">
@@ -614,13 +613,16 @@
         }
 
         // ==========================================
-        // LÓGICA VIEW 2: SCAN PCT
+        // LÓGICA VIEW 2: SCAN PCT (ZXing Loader)
         // ==========================================
         let allPackages = [];
         let currentBatchUser = null;
         let isConferenceMode = false;
-        let html5QrCode = null;
-        let isCameraActive = false; // Controle seguro do estado da câmera
+        
+        let codeReader = null;
+        let isCameraActive = false; 
+        let lastScannedCode = '';
+        let lastScannedTime = 0;
 
         const userSection = document.getElementById('userSection');
         const startSection = document.getElementById('startSection');
@@ -664,9 +666,9 @@
         barcodeInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') handleManualInput(); });
 
         function processCode(code) {
-            // VALIDAÇÃO: APENAS NÚMEROS
-            if (!/^\d+$/.test(code)) {
-                showToast("Apenas números são aceitos!", "bg-orange-500", "fa-exclamation-triangle");
+            // VALIDAÇÃO: APENAS NÚMEROS E LETRAS (Código de Barras Padrão)
+            if (!/^[A-Za-z0-9]+$/.test(code)) {
+                showToast("Apenas caracteres alfanuméricos são aceitos!", "bg-orange-500", "fa-exclamation-triangle");
                 if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
                 return;
             }
@@ -774,6 +776,7 @@
             reader.readAsText(file);
         }
 
+        // ZXing Camera Control
         async function toggleCamera() {
             try {
                 if (isCameraActive) {
@@ -784,75 +787,73 @@
                 document.getElementById('camBtnText').innerText = "Iniciando...";
                 cameraContainer.classList.remove('hidden');
                 
-                if (!html5QrCode) {
-                    html5QrCode = new Html5Qrcode("reader");
+                if (!codeReader) {
+                    codeReader = new ZXing.BrowserMultiFormatReader();
                 }
 
-                const config = { 
-                    fps: 10, 
-                    qrbox: { width: 250, height: 250 },
-                    aspectRatio: 1.0
-                };
-
-                let devices = [];
-                try {
-                    devices = await Html5Qrcode.getCameras();
-                } catch (e) {
-                    console.warn("Não foi possível listar as câmeras, tentando câmera traseira diretamente.", e);
-                }
+                const videoInputDevices = await codeReader.listVideoInputDevices();
                 
-                if (devices && devices.length > 0) {
+                if (videoInputDevices && videoInputDevices.length > 0) {
                     const select = document.getElementById('camSelect');
                     select.classList.remove('hidden');
-                    select.innerHTML = devices.map(d => `<option value="${d.id}">${d.label || 'Câmera ' + d.id}</option>`).join('');
                     
-                    const lastCamera = devices[devices.length - 1]; 
-                    await html5QrCode.start(lastCamera.id, config, (text) => processCode(text));
-                    
-                    select.value = lastCamera.id;
-                    select.onchange = async () => {
-                        if (isCameraActive) {
-                            await html5QrCode.stop();
-                            await html5QrCode.start(select.value, config, (text) => processCode(text));
-                        }
+                    let selectedDeviceId = videoInputDevices[0].deviceId;
+                    // Procura preferencialmente câmera traseira
+                    const backCamera = videoInputDevices.find(d => d.label.toLowerCase().includes('back') || d.label.toLowerCase().includes('traseira') || d.label.toLowerCase().includes('environment'));
+                    if (backCamera) selectedDeviceId = backCamera.deviceId;
+
+                    select.innerHTML = videoInputDevices.map(d => `<option value="${d.deviceId}">${d.label || 'Câmera ' + d.deviceId}</option>`).join('');
+                    select.value = selectedDeviceId;
+
+                    startScanning(selectedDeviceId);
+
+                    select.onchange = () => {
+                        codeReader.reset();
+                        startScanning(select.value);
                     };
                 } else {
-                    // Fallback se "getCameras" falhar mas o acesso for permitido
-                    await html5QrCode.start({ facingMode: "environment" }, config, (text) => processCode(text));
+                    // Fallback tenta abrir qualquer camera primária
+                    startScanning(undefined);
                 }
-
-                isCameraActive = true;
-                document.getElementById('camBtnText').innerText = "Parar Câmera";
 
             } catch (err) {
                 console.error("Erro câmera:", err);
-                showToast("Permissão de câmera negada ou erro.", "bg-red-500", "fa-video-slash");
-                cameraContainer.classList.add('hidden');
-                document.getElementById('camBtnText').innerText = "Ativar Câmera";
-                isCameraActive = false;
+                showToast("Permissão negada ou sem câmera.", "bg-red-500", "fa-video-slash");
+                stopCamera();
             }
         }
 
+        function startScanning(deviceId) {
+            codeReader.decodeFromVideoDevice(deviceId, 'readerVideo', (result, err) => {
+                if (result) {
+                    const code = result.getText();
+                    const now = Date.now();
+                    
+                    // Sistema anti-flood (Debounce de 2 segundos) para o mesmo código lido repetidas vezes
+                    if (code !== lastScannedCode || (now - lastScannedTime) > 2000) {
+                        lastScannedCode = code;
+                        lastScannedTime = now;
+                        processCode(code);
+                    }
+                }
+            }).catch(err => {
+                console.error("Erro no feed da câmera:", err);
+                showToast("Erro ao conectar na câmera.", "bg-red-500", "fa-video-slash");
+                stopCamera();
+            });
+
+            isCameraActive = true;
+            document.getElementById('camBtnText').innerText = "Parar Câmera";
+        }
+
         function stopCamera() {
-            if (html5QrCode && isCameraActive) {
-                html5QrCode.stop().then(() => {
-                    isCameraActive = false;
-                    cameraContainer.classList.add('hidden');
-                    const btnTxt = document.getElementById('camBtnText');
-                    if(btnTxt) btnTxt.innerText = "Ativar Câmera";
-                }).catch(err => {
-                    console.warn("Erro ao parar:", err);
-                    isCameraActive = false;
-                    cameraContainer.classList.add('hidden');
-                    const btnTxt = document.getElementById('camBtnText');
-                    if(btnTxt) btnTxt.innerText = "Ativar Câmera";
-                });
-            } else {
-                isCameraActive = false;
-                cameraContainer.classList.add('hidden');
-                const btnTxt = document.getElementById('camBtnText');
-                if(btnTxt) btnTxt.innerText = "Ativar Câmera";
+            if (codeReader) {
+                codeReader.reset();
             }
+            isCameraActive = false;
+            cameraContainer.classList.add('hidden');
+            const btnTxt = document.getElementById('camBtnText');
+            if (btnTxt) btnTxt.innerText = "Ativar Câmera";
         }
 
         function resetEverything() {
