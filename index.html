@@ -234,9 +234,47 @@
         .row-lost { background-color: rgba(15, 15, 15, 0.4) !important; border-left: 4px solid #000 !important; opacity: 0.7; }
         @keyframes modalIn { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
         .modal-animate { animation: modalIn 0.2s ease-out forwards; }
+        
+        /* Estilo para as notificações flutuantes */
+        #toast-container {
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 9999;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 10px;
+            pointer-events: none;
+            width: 100%;
+            max-width: 350px;
+        }
+        .toast-item {
+            pointer-events: auto;
+            padding: 12px 24px;
+            border-radius: 9999px;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3);
+            color: white;
+            font-size: 14px;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            opacity: 0;
+            transform: translateY(-20px);
+        }
+        .toast-item.show {
+            opacity: 1;
+            transform: translateY(0);
+        }
     </style>
 </head>
 <body class="bg-gray-100 dark:bg-black text-gray-800 dark:text-gray-100 min-h-screen flex flex-col transition-colors duration-300">
+
+    <!-- Container de Notificações -->
+    <div id="toast-container"></div>
 
     <!-- Navbar -->
     <div id="main-navbar" class="fixed top-0 left-0 right-0 h-16 z-40 pointer-events-none hidden">
@@ -363,8 +401,8 @@
             <div class="mb-4 bg-blue-50 dark:bg-blue-900/20 w-16 h-16 rounded-full flex items-center justify-center mx-auto text-blue-600"><i class="fas fa-box text-2xl"></i></div>
             <h3 class="text-xl font-bold mb-4">Operação de Lote</h3>
             <div class="flex gap-3">
-                <button onclick="startNewBatch('out')" class="flex-1 py-4 bg-blue-600 text-white rounded-2xl font-bold shadow-lg">Adicionar</button>
-                <button onclick="startNewBatch('return')" class="flex-1 py-4 bg-green-600 text-white rounded-2xl font-bold shadow-lg">Devolver</button>
+                <button onclick="startNewBatch('out')" class="flex-1 py-4 bg-blue-600 text-white rounded-2xl font-bold shadow-lg active:scale-95 transition-transform">Adicionar</button>
+                <button onclick="startNewBatch('return')" class="flex-1 py-4 bg-green-600 text-white rounded-2xl font-bold shadow-lg active:scale-95 transition-transform">Devolver</button>
             </div>
         </div>
 
@@ -417,11 +455,6 @@
                 <button onclick="saveHistoryPDF()" class="text-xs text-blue-600 font-bold px-3 py-2 rounded-lg bg-blue-50"><i class="fas fa-file-pdf"></i> PDF</button>
             </div>
         </div>
-    </div>
-
-    <!-- Notificações Toast -->
-    <div id="toast" class="fixed top-5 left-1/2 -translate-x-1/2 px-6 py-3 rounded-full shadow-2xl transition-all duration-300 opacity-0 z-[100] flex items-center gap-2 text-sm font-bold text-white pointer-events-none">
-        <i id="toastIcon"></i> <span id="toastMsg"></span>
     </div>
 
     <script>
@@ -477,17 +510,17 @@
                 } else {
                     const alreadyDevolved = allPackages.find(p => p.id === code && p.collection === 'devolvidos');
                     if(alreadyDevolved) {
-                        showToast("Já foi devolvido anteriormente!", "bg-yellow-500", "fa-info-circle");
+                        showToast("Já foi devolvido!", "bg-yellow-500", "fa-info-circle");
                         playBeep(false);
                     } else {
-                        showToast("ERRO: Pacote não registrado na saída!", "bg-red-600", "fa-times-circle");
+                        showToast("ERRO: Não registrado na saída!", "bg-red-600", "fa-times-circle");
                         playBeep(false);
                     }
                 }
             } else {
                 const existing = allPackages.find(p => p.id === code);
                 if(existing && existing.collection === 'bipados') {
-                    showToast("Já está em rota no sistema!", "bg-yellow-500", "fa-info-circle");
+                    showToast("Já está em rota!", "bg-yellow-500", "fa-info-circle");
                     playBeep(false);
                 } else {
                     await window.saveToFirebase(code);
@@ -498,20 +531,20 @@
         }
 
         async function finalizeOperation() {
-            const confirmMsg = isConferenceMode ? "Finalizar devolução? Itens restantes serão marcados como 'Falta'." : "Finalizar bipagem de saída?";
+            const confirmMsg = isConferenceMode ? "Finalizar devolução? Itens restantes ficam como 'Falta'." : "Finalizar saída?";
             if(confirm(confirmMsg)) {
                 if (isConferenceMode) await window.finalizeInFirebase();
                 document.getElementById('userSection').classList.add('hidden');
                 document.getElementById('startSection').classList.remove('hidden');
                 stopCamera();
-                showToast("Lote Concluído com Sucesso!", "bg-slate-800", "fa-flag-checkered");
+                showToast("Lote Concluído!", "bg-slate-800", "fa-flag-checkered");
             }
         }
 
         function updateScanUI() {
             const list = document.getElementById('packageList');
             if(allPackages.length === 0) {
-                list.innerHTML = `<p class="p-12 text-center text-slate-400 italic text-sm">Nenhum pacote carregado no banco.</p>`;
+                list.innerHTML = `<p class="p-12 text-center text-slate-400 italic text-sm">Lista vazia.</p>`;
             } else {
                 list.innerHTML = allPackages.map(p => {
                     let statusClass = "bg-blue-100 text-blue-700"; let rowClass = "row-route";
@@ -602,15 +635,30 @@
             g.gain.setValueAtTime(0.3, audioCtx.currentTime); g.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
             o.connect(g); g.connect(audioCtx.destination); o.start(); o.stop(audioCtx.currentTime + 0.1);
         }
+
+        // ALTERNATIVA PARA NOTIFICAÇÕES QUE SOMEM (DINÂMICO)
         function showToast(m, c, i) {
-            const t = document.getElementById('toast');
-            t.className = `fixed top-5 left-1/2 -translate-x-1/2 px-6 py-3 rounded-full shadow-2xl transition-all duration-300 z-[100] flex items-center gap-2 text-sm font-bold text-white ${c} opacity-100 translate-y-0`;
-            document.getElementById('toastMsg').innerText = m; document.getElementById('toastIcon').className = `fas ${i}`;
-            setTimeout(() => { 
-                t.classList.add('opacity-0'); 
-                t.classList.add('translate-y-[-20px]'); 
-            }, 4000); // 4 segundos como solicitado
+            const container = document.getElementById('toast-container');
+            
+            // Cria o elemento do toast
+            const toast = document.createElement('div');
+            toast.className = `toast-item ${c}`;
+            toast.innerHTML = `<i class="fas ${i || 'fa-info-circle'}"></i> <span>${m}</span>`;
+            
+            // Adiciona ao container
+            container.appendChild(toast);
+            
+            // Ativa animação de entrada
+            setTimeout(() => toast.classList.add('show'), 10);
+            
+            // Agenda remoção (4 segundos)
+            setTimeout(() => {
+                toast.classList.remove('show');
+                // Remove do DOM após a transição de saída
+                setTimeout(() => toast.remove(), 400);
+            }, 4000);
         }
+
         function handleManualInput() { const i = document.getElementById('barcodeInput'); if(i.value.trim()) processCode(i.value.trim()); i.value = ""; }
         document.getElementById('barcodeInput').addEventListener('keypress', (e) => { if(e.key === 'Enter') handleManualInput(); });
 
