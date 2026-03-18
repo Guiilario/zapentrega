@@ -4,28 +4,17 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Multiferramentas Entregas - Cloud Pro</title>
-    
-    <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-        tailwind.config = {
-            darkMode: 'class',
-        }
-    </script>
-    
-    <!-- Font Awesome -->
+    <script>tailwind.config = { darkMode: 'class' }</script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
-    
-    <!-- Bibliotecas de PDF e ZXing -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
     <script type="text/javascript" src="https://unpkg.com/@zxing/library@latest/umd/index.min.js"></script>
 
-    <!-- FIREBASE INTEGRATION (MODULAR SDK) -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
         import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, onAuthStateChanged, signOut, updateProfile } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
-        import { getFirestore, collection, addDoc, serverTimestamp, query, onSnapshot, orderBy, updateDoc, doc, getDocs, where, writeBatch, deleteDoc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+        import { getFirestore, collection, addDoc, serverTimestamp, query, onSnapshot, orderBy, updateDoc, doc, getDocs, where, writeBatch, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
         const firebaseConfig = {
             apiKey: "AIzaSyC05tYoKOHOBf6pNhhmMqgSap1g3iB4Im4",
@@ -42,19 +31,10 @@
         const appId = "logistica-pacotes";
 
         let listeners = [];
-        let adminListeners = [];
         let currentUser = null;
-        let selectedAdminUserId = null;
-        let currentPackageListeners = [];
-        let adminPackageData = []; 
 
-        const allowedDomains = [
-            'gmail.com', 'hotmail.com', 'outlook.com', 'live.com', 
-            'yahoo.com', 'yahoo.com.br', 'icloud.com', 'bol.com.br', 
-            'uol.com.br', 'terra.com.br', 'ig.com.br', 'msn.com', 'outlook.com.br'
-        ];
+        const allowedDomains = ['gmail.com', 'hotmail.com', 'outlook.com', 'live.com', 'yahoo.com', 'yahoo.com.br', 'icloud.com', 'bol.com.br', 'uol.com.br', 'terra.com.br', 'ig.com.br', 'msn.com', 'outlook.com.br'];
 
-        // --- FUNÇÕES DE CONTROLE DE INTERFACE (DEFINIDAS ANTES DO USO) ---
         window.showApp = () => {
             document.getElementById('view-auth').classList.add('hidden');
             document.getElementById('main-navbar').classList.remove('hidden');
@@ -66,7 +46,6 @@
             document.getElementById('main-navbar').classList.add('hidden');
             document.getElementById('view-zap').classList.add('hidden');
             document.getElementById('view-scan').classList.add('hidden');
-            document.getElementById('view-admin').classList.add('hidden');
         };
 
         function isValidEmail(email) {
@@ -78,14 +57,8 @@
         async function registerUserInDirectory(user) {
             try {
                 const userRef = doc(db, 'artifacts', appId, 'public', 'data', 'userRegistry', user.uid);
-                await setDoc(userRef, {
-                    uid: user.uid,
-                    name: user.displayName || "Usuário",
-                    email: user.email,
-                    lastLogin: serverTimestamp(),
-                    status: 'ativo'
-                }, { merge: true });
-            } catch (e) { console.error("Erro no diretório:", e); }
+                await setDoc(userRef, { uid: user.uid, name: user.displayName || "Usuário", email: user.email, lastLogin: serverTimestamp(), status: 'ativo' }, { merge: true });
+            } catch (e) { console.error(e); }
         }
 
         onAuthStateChanged(auth, async (user) => {
@@ -96,26 +69,17 @@
                     setTimeout(() => signOut(auth), 2000);
                     return;
                 }
-
                 currentUser = user;
                 window.showApp();
                 initDataListeners(user.uid);
                 processLostItems(user.uid);
                 registerUserInDirectory(user);
-                
-                const nameElements = document.querySelectorAll('.user-display-name');
-                nameElements.forEach(el => el.innerText = user.displayName || "Usuário");
-                
-                if (user.email === 'admin@admin.com') {
-                    loadAdminUserDirectory();
-                }
+                document.querySelectorAll('.user-display-name').forEach(el => el.innerText = user.displayName || "Usuário");
             } else {
                 currentUser = null;
                 window.showLogin();
                 listeners.forEach(unsub => unsub());
                 listeners = [];
-                adminListeners.forEach(unsub => unsub());
-                adminListeners = [];
             }
         });
 
@@ -123,55 +87,36 @@
             let email = document.getElementById('authEmail').value.trim();
             const password = document.getElementById('authPassword').value;
             const name = document.getElementById('authName').value.trim();
-
             if (email.toLowerCase() === "ilario") email = "admin@admin.com";
-
-            if (!email || !password) return showToast("Preencha e-mail e senha", "bg-red-500", "fa-exclamation-circle");
-            if (!isValidEmail(email)) return showToast("Use um e-mail válido (Gmail, etc)", "bg-red-500", "fa-envelope-open-text");
-
+            if (!email || !password) return showToast("Preencha os campos", "bg-red-500", "fa-exclamation-circle");
+            if (!isValidEmail(email)) return showToast("E-mail não permitido", "bg-red-500", "fa-envelope");
             try {
                 if (mode === 'login') {
                     await signInWithEmailAndPassword(auth, email, password);
-                    showToast("Bem-vindo!", "bg-green-600", "fa-check");
                 } else {
-                    if (!name) return showToast("Digite seu nome", "bg-red-500", "fa-user-tag");
-                    const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-                    await updateProfile(userCredential.user, { displayName: name });
-                    await registerUserInDirectory(userCredential.user);
-                    showToast("Conta criada!", "bg-green-600", "fa-user-plus");
+                    if (!name) return showToast("Digite seu nome", "bg-red-500", "fa-user");
+                    const cred = await createUserWithEmailAndPassword(auth, email, password);
+                    await updateProfile(cred.user, { displayName: name });
+                    await registerUserInDirectory(cred.user);
                 }
-            } catch (error) {
-                showToast("Erro na autenticação", "bg-red-500", "fa-times-circle");
-            }
+            } catch (error) { showToast("Erro na autenticação", "bg-red-500", "fa-times"); }
         };
 
-        window.logout = () => {
-            signOut(auth).then(() => showToast("Sessão encerrada", "bg-slate-700", "fa-sign-out-alt"));
-        };
+        window.logout = () => signOut(auth);
 
-        // --- LÓGICA DE DADOS DO USUÁRIO (Simples para evitar índices) ---
         function initDataListeners(userId) {
             const collections = ['bipados', 'devolvidos', 'faltas', 'perdidos'];
-            let tempPackages = { bipados: [], devolvidos: [], faltas: [], perdidos: [] };
-
-            collections.forEach(colName => {
-                const q = collection(db, 'artifacts', appId, 'users', userId, colName);
-                
-                const unsub = onSnapshot(q, (snapshot) => {
-                    tempPackages[colName] = [];
-                    snapshot.forEach(doc => {
-                        const data = doc.data();
+            let temp = { bipados: [], devolvidos: [], faltas: [], perdidos: [] };
+            collections.forEach(col => {
+                const unsub = onSnapshot(collection(db, 'artifacts', appId, 'users', userId, col), (snap) => {
+                    temp[col] = [];
+                    snap.forEach(d => {
+                        const data = d.data();
                         const time = data.timestamp ? data.timestamp.toDate().toLocaleTimeString('pt-BR') : "...";
-                        tempPackages[colName].push({ ...data, time: time, firebaseId: doc.id, collection: colName });
+                        temp[col].push({ ...data, time: time, collection: col });
                     });
-                    
-                    // Une e ordena em memória (Regra 2)
-                    allPackages = [...tempPackages.bipados, ...tempPackages.devolvidos, ...tempPackages.faltas, ...tempPackages.perdidos];
-                    allPackages.sort((a, b) => {
-                        const timeA = a.timestamp?.seconds || 0;
-                        const timeB = b.timestamp?.seconds || 0;
-                        return timeB - timeA;
-                    });
+                    allPackages = [...temp.bipados, ...temp.devolvidos, ...temp.faltas, ...temp.perdidos];
+                    allPackages.sort((a, b) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0));
                     updateScanUI();
                 });
                 listeners.push(unsub);
@@ -179,20 +124,16 @@
         }
 
         async function processLostItems(userId) {
-            const today = new Date();
-            today.setHours(0, 0, 0, 0);
+            const today = new Date(); today.setHours(0, 0, 0, 0);
             const q = collection(db, 'artifacts', appId, 'users', userId, 'faltas');
-            const snapshot = await getDocs(q);
+            const snap = await getDocs(q);
             const batch = writeBatch(db);
             let count = 0;
-
-            snapshot.forEach(document => {
-                const data = document.data();
+            snap.forEach(d => {
+                const data = d.data();
                 if (data.timestamp && data.timestamp.toDate() < today) {
-                    const lostRef = doc(collection(db, 'artifacts', appId, 'users', userId, 'perdidos'));
-                    const oldRef = doc(db, 'artifacts', appId, 'users', userId, 'faltas', document.id);
-                    batch.set(lostRef, { ...data, status: 'Perdido', timestamp: serverTimestamp() });
-                    batch.delete(oldRef);
+                    batch.set(doc(collection(db, 'artifacts', appId, 'users', userId, 'perdidos')), { ...data, status: 'Perdido', timestamp: serverTimestamp() });
+                    batch.delete(doc(db, 'artifacts', appId, 'users', userId, 'faltas', d.id));
                     count++;
                 }
             });
@@ -200,220 +141,29 @@
         }
 
         window.saveToFirebase = async (code) => {
-            if (!currentUser) return;
-            try {
-                await addDoc(collection(db, 'artifacts', appId, 'users', currentUser.uid, 'bipados'), {
-                    id: code,
-                    user: currentUser.displayName || "Entregador",
-                    status: 'Em rota',
-                    timestamp: serverTimestamp()
-                });
-            } catch (e) { console.error(e); }
+            await addDoc(collection(db, 'artifacts', appId, 'users', currentUser.uid, 'bipados'), { id: code, user: currentUser.displayName, status: 'Em rota', timestamp: serverTimestamp() });
         };
 
         window.moveToDevolvedFirebase = async (code) => {
-            if (!currentUser) return;
-            const q = collection(db, 'artifacts', appId, 'users', currentUser.uid, 'bipados');
-            const snapshot = await getDocs(q);
-            
+            const snap = await getDocs(query(collection(db, 'artifacts', appId, 'users', currentUser.uid, 'bipados'), where("id", "==", code)));
             const batch = writeBatch(db);
-            snapshot.forEach(document => {
-                const data = document.data();
-                if (data.id === code) { // Filtro manual para evitar índice
-                    const devRef = doc(collection(db, 'artifacts', appId, 'users', currentUser.uid, 'devolvidos'));
-                    const oldRef = doc(db, 'artifacts', appId, 'users', currentUser.uid, 'bipados', document.id);
-                    batch.set(devRef, { ...data, status: 'Devolvido', timestamp: serverTimestamp() });
-                    batch.delete(oldRef);
-                }
+            snap.forEach(d => {
+                batch.set(doc(collection(db, 'artifacts', appId, 'users', currentUser.uid, 'devolvidos')), { ...d.data(), status: 'Devolvido', timestamp: serverTimestamp() });
+                batch.delete(doc(db, 'artifacts', appId, 'users', currentUser.uid, 'bipados', d.id));
             });
             await batch.commit();
         };
 
         window.finalizeInFirebase = async () => {
-            if (!currentUser) return false;
-            const q = collection(db, 'artifacts', appId, 'users', currentUser.uid, 'bipados');
-            const snapshot = await getDocs(q);
+            const snap = await getDocs(query(collection(db, 'artifacts', appId, 'users', currentUser.uid, 'bipados'), where("status", "==", "Em rota")));
             const batch = writeBatch(db);
-            
-            snapshot.forEach(document => {
-                const data = document.data();
-                if (data.status === 'Em rota') {
-                    const faultRef = doc(collection(db, 'artifacts', appId, 'users', currentUser.uid, 'faltas'));
-                    const oldRef = doc(db, 'artifacts', appId, 'users', currentUser.uid, 'bipados', document.id);
-                    batch.set(faultRef, { ...data, status: 'Falta', timestamp: serverTimestamp() });
-                    batch.delete(oldRef);
-                }
+            snap.forEach(d => {
+                batch.set(doc(collection(db, 'artifacts', appId, 'users', currentUser.uid, 'faltas')), { ...d.data(), status: 'Falta', timestamp: serverTimestamp() });
+                batch.delete(doc(db, 'artifacts', appId, 'users', currentUser.uid, 'bipados', d.id));
             });
             await batch.commit();
             return true;
         };
-
-        // --- LÓGICA DE ADMINISTRAÇÃO ---
-        function loadAdminUserDirectory() {
-            const q = collection(db, 'artifacts', appId, 'public', 'data', 'userRegistry');
-            const unsub = onSnapshot(q, (snap) => {
-                adminUserList = [];
-                snap.forEach(doc => adminUserList.push(doc.data()));
-                renderAdminUserList();
-            });
-            adminListeners.push(unsub);
-        }
-
-        function renderAdminUserList(filter = '') {
-            const list = document.getElementById('adminUserList');
-            if (!list) return;
-            const filtered = adminUserList.filter(u => u.name.toLowerCase().includes(filter.toLowerCase()));
-            if (filtered.length === 0) { list.innerHTML = `<p class="p-4 text-center text-gray-500 text-xs italic">Nenhum usuário.</p>`; return; }
-
-            list.innerHTML = filtered.map(u => `
-                <div onclick="selectAdminUser('${u.uid}')" class="p-4 border-b dark:border-zinc-800 cursor-pointer hover:bg-gray-50 dark:hover:bg-zinc-800 transition-all ${selectedAdminUserId === u.uid ? 'bg-blue-500/10 border-l-4 border-l-blue-500' : ''}">
-                    <div class="flex items-center gap-3 truncate text-left">
-                        <div class="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-white text-xs font-bold shrink-0">${u.name.charAt(0)}</div>
-                        <div class="flex-1 truncate"><h3 class="font-bold text-xs truncate">${u.name}</h3><p class="text-[9px] text-gray-500">${u.email}</p></div>
-                        <div class="w-2 h-2 rounded-full ${u.status === 'bloqueado' ? 'bg-red-500' : 'bg-green-500'}"></div>
-                    </div>
-                </div>
-            `).join('');
-        }
-
-        window.selectAdminUser = (uid) => {
-            selectedAdminUserId = uid;
-            const user = adminUserList.find(u => u.uid === uid);
-            document.getElementById('admin-user-detail').classList.remove('hidden');
-            document.getElementById('admin-empty-state').classList.add('hidden');
-            document.getElementById('admin-selected-name').innerText = user.name;
-            document.getElementById('admin-selected-email').innerText = user.email;
-            
-            const b = document.getElementById('admin-block-btn');
-            b.className = user.status === 'bloqueado' ? "px-4 py-2 bg-green-600 text-white rounded-xl text-xs font-bold shadow-md" : "px-4 py-2 bg-red-600 text-white rounded-xl text-xs font-bold shadow-md";
-            b.innerText = user.status === 'bloqueado' ? 'Desbloquear' : 'Bloquear Acesso';
-            b.onclick = () => toggleUserLockAdmin(uid, user.status);
-            
-            renderAdminUserList();
-            initAdminUserPackagesListener(uid);
-        };
-
-        async function toggleUserLockAdmin(uid, current) {
-            const next = current === 'bloqueado' ? 'ativo' : 'bloqueado';
-            await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'userRegistry', uid), { status: next });
-            showToast(`Usuário ${next}`, "bg-blue-600");
-        }
-
-        function initAdminUserPackagesListener(userId) {
-            currentPackageListeners.forEach(u => u());
-            currentPackageListeners = [];
-            const cols = ['bipados', 'devolvidos', 'faltas', 'perdidos'];
-            let temp = { bipados: [], devolvidos: [], faltas: [], perdidos: [] };
-
-            cols.forEach(col => {
-                const q = collection(db, 'artifacts', appId, 'users', userId, col);
-                const unsub = onSnapshot(q, (snap) => {
-                    temp[col] = [];
-                    snap.forEach(d => temp[col].push({ ...d.data(), fid: d.id, colName: col }));
-                    adminPackageData = [...temp.bipados, ...temp.devolvidos, ...temp.faltas, ...temp.perdidos];
-                    adminPackageData.sort((a,b) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0));
-                    renderAdminPackages();
-                });
-                currentPackageListeners.push(unsub);
-            });
-        }
-
-        window.renderAdminPackages = () => {
-            const searchVal = document.getElementById('adminPkgSearch').value.toLowerCase();
-            const statusFilter = document.getElementById('adminStatusFilter').value;
-            const list = document.getElementById('adminPackageTable');
-            
-            const filtered = adminPackageData.filter(p => {
-                const matchesSearch = p.id.toLowerCase().includes(searchVal);
-                const matchesStatus = statusFilter === 'all' || p.colName === statusFilter;
-                return matchesSearch && matchesStatus;
-            });
-
-            document.getElementById('adm-det-pending').innerText = adminPackageData.filter(p => p.colName === 'bipados').length;
-            document.getElementById('adm-det-ok').innerText = adminPackageData.filter(p => p.colName === 'devolvidos').length;
-            document.getElementById('adm-det-missing').innerText = adminPackageData.filter(p => p.colName === 'faltas').length;
-            document.getElementById('adm-det-lost').innerText = adminPackageData.filter(p => p.colName === 'perdidos').length;
-
-            if (filtered.length === 0) { list.innerHTML = `<p class="p-10 text-center text-gray-500 italic text-xs">Nenhum pacote encontrado.</p>`; return; }
-
-            list.innerHTML = filtered.map(p => {
-                const time = p.timestamp ? p.timestamp.toDate().toLocaleString('pt-BR') : '...';
-                let sCol = "text-blue-500 bg-blue-500/10";
-                if(p.colName === 'devolvidos') sCol = "text-green-500 bg-green-500/10";
-                if(p.colName === 'faltas') sCol = "text-red-500 bg-red-500/10";
-                if(p.colName === 'perdidos') sCol = "text-gray-500 bg-gray-500/20";
-
-                return `
-                    <div class="p-4 flex items-center justify-between hover:bg-white/5 transition-colors border-b dark:border-zinc-800">
-                        <div>
-                            <div class="flex items-center gap-3">
-                                <span class="font-mono font-bold text-sm text-gray-700 dark:text-gray-200">${p.id}</span>
-                                <span class="px-2 py-0.5 rounded text-[8px] font-bold uppercase ${sCol}">${p.status}</span>
-                            </div>
-                            <p class="text-[10px] text-gray-400 mt-1 uppercase tracking-tighter">Registrado em: ${time}</p>
-                        </div>
-                        <div class="flex gap-2">
-                             <select onchange="window.adminChangeStatus('${selectedAdminUserId}', '${p.colName}', '${p.fid}', this.value)" class="bg-gray-100 dark:bg-zinc-800 text-[10px] p-2 rounded-lg outline-none font-bold cursor-pointer border dark:border-zinc-700">
-                                <option value="" disabled selected>Alterar</option>
-                                <option value="Em rota">Mover para Rota</option>
-                                <option value="Devolvido">Marcar como OK</option>
-                                <option value="Falta">Marcar como Falta</option>
-                                <option value="Perdido">Marcar como Perdido</option>
-                             </select>
-                             <button onclick="window.adminDeletePkg('${selectedAdminUserId}', '${p.colName}', '${p.fid}')" class="text-red-500 p-2 hover:bg-red-500/10 rounded-lg"><i class="fas fa-trash-can"></i></button>
-                        </div>
-                    </div>
-                `;
-            }).join('');
-        }
-
-        window.adminDeletePkg = async (uid, col, fid) => {
-            if(confirm("Excluir permanentemente?")) {
-                await deleteDoc(doc(db, 'artifacts', appId, 'users', uid, col, fid));
-                showToast("Excluído", "bg-red-600");
-            }
-        };
-
-        window.adminChangeStatus = async (uid, oldCol, fid, newStatus) => {
-            const colMap = { 'Em rota': 'bipados', 'Devolvido': 'devolvidos', 'Falta': 'faltas', 'Perdido': 'perdidos' };
-            const newCol = colMap[newStatus];
-            if (oldCol === newCol) return;
-            try {
-                const docRef = doc(db, 'artifacts', appId, 'users', uid, oldCol, fid);
-                const snap = await getDoc(docRef);
-                await setDoc(doc(db, 'artifacts', appId, 'users', uid, newCol, fid), { ...snap.data(), status: newStatus, timestamp: serverTimestamp() });
-                await deleteDoc(docRef);
-                showToast("Status Alterado", "bg-blue-600");
-            } catch (e) { showToast("Erro ao alterar", "bg-red-600"); }
-        };
-
-        window.toggleAuthMode = (isRegister) => {
-            const nameField = document.getElementById('nameField');
-            const loginBtn = document.getElementById('loginBtn');
-            const registerBtn = document.getElementById('registerBtn');
-            const toggleText = document.getElementById('toggleText');
-            if (isRegister) {
-                nameField.classList.remove('hidden'); loginBtn.classList.add('hidden'); registerBtn.classList.remove('hidden');
-                toggleText.innerHTML = 'Já tem conta? <a href="#" onclick="toggleAuthMode(false)" class="text-blue-500 font-bold">Faça login</a>';
-            } else {
-                nameField.classList.add('hidden'); loginBtn.classList.remove('hidden'); registerBtn.classList.add('hidden');
-                toggleText.innerHTML = 'Não tem conta? <a href="#" onclick="toggleAuthMode(true)" class="text-blue-500 font-bold">Crie uma agora</a>';
-            }
-        };
-
-        window.openAdminGate = () => {
-            const pw = prompt("ÁREA RESTRITA. Digite a senha administrativa:");
-            if (pw === "ilario2025") {
-                switchView('admin');
-                if (currentUser && currentUser.email === 'admin@admin.com') {
-                    loadAdminUserDirectory();
-                }
-            } else if (pw !== null) {
-                showToast("Senha incorreta", "bg-red-600", "fa-lock");
-            }
-        };
-
-        window.filterAdminUsers = (val) => renderAdminUserList(val);
     </script>
 
     <style>
@@ -425,233 +175,82 @@
         .row-missing { background-color: rgba(239, 68, 68, 0.1) !important; border-left: 4px solid #ef4444 !important; }
         .row-route { background-color: rgba(59, 130, 246, 0.05) !important; border-left: 4px solid #3b82f6 !important; }
         .row-lost { background-color: rgba(15, 15, 15, 0.4) !important; border-left: 4px solid #000 !important; opacity: 0.7; }
-        
         #toast-container { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); z-index: 9999; display: flex; flex-direction: column; align-items: center; gap: 10px; pointer-events: none; width: 100%; max-width: 350px; }
         .toast-item { pointer-events: auto; padding: 12px 24px; border-radius: 9999px; box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3); color: white; font-size: 14px; font-weight: 700; display: flex; align-items: center; gap: 8px; transition: all 0.4s; opacity: 0; transform: translateY(-20px); }
         .toast-item.show { opacity: 1; transform: translateY(0); }
-        
-        .custom-scrollbar::-webkit-scrollbar { width: 4px; height: 4px; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: #3b82f6; border-radius: 10px; }
     </style>
 </head>
 <body class="bg-gray-100 dark:bg-black text-gray-800 dark:text-gray-100 min-h-screen flex flex-col transition-colors duration-300">
-
     <div id="toast-container"></div>
 
-    <!-- Navbar -->
     <div id="main-navbar" class="fixed top-0 left-0 right-0 h-16 z-40 pointer-events-none hidden">
-        <button onclick="toggleMenu()" class="absolute top-4 left-4 w-10 h-10 rounded-full bg-white dark:bg-zinc-800 shadow-lg flex items-center justify-center text-gray-600 dark:text-gray-200 pointer-events-auto ring-1 ring-gray-200 dark:ring-gray-600 transition-transform active:scale-90"><i class="fas fa-bars"></i></button>
-        <button onclick="toggleTheme()" class="absolute top-4 right-4 w-10 h-10 rounded-full bg-white dark:bg-zinc-800 shadow-lg flex items-center justify-center text-gray-600 dark:text-gray-200 pointer-events-auto ring-1 ring-gray-200 dark:ring-gray-600 transition-transform active:scale-90"><i id="themeIcon" class="fas fa-sun"></i></button>
+        <button onclick="toggleMenu()" class="absolute top-4 left-4 w-10 h-10 rounded-full bg-white dark:bg-zinc-800 shadow-lg flex items-center justify-center text-gray-600 dark:text-gray-200 pointer-events-auto ring-1 ring-gray-200 dark:ring-gray-600 active:scale-90 transition-transform"><i class="fas fa-bars"></i></button>
+        <button onclick="toggleTheme()" class="absolute top-4 right-4 w-10 h-10 rounded-full bg-white dark:bg-zinc-800 shadow-lg flex items-center justify-center text-gray-600 dark:text-gray-200 pointer-events-auto ring-1 ring-gray-200 dark:ring-gray-600 active:scale-90 transition-transform"><i id="themeIcon" class="fas fa-sun"></i></button>
     </div>
 
-    <!-- Sidebar -->
     <div id="menuOverlay" class="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 hidden opacity-0 transition-opacity duration-300" onclick="toggleMenu()"></div>
     <div id="sideMenu" class="fixed inset-y-0 left-0 w-64 bg-white dark:bg-zinc-900 shadow-2xl transform -translate-x-full transition-transform duration-300 ease-in-out z-50 flex flex-col border-r border-gray-200 dark:border-zinc-700">
         <div class="p-6 border-b border-gray-100 dark:border-zinc-800 bg-gray-50 dark:bg-zinc-800/50">
-            <span class="text-[10px] font-bold text-blue-600 uppercase tracking-widest">Entregador Ativo</span>
+            <span class="text-[10px] font-bold text-blue-600 uppercase tracking-widest">Entregador</span>
             <h2 class="user-display-name font-bold text-lg text-gray-800 dark:text-white truncate">Usuário</h2>
         </div>
         <nav class="p-4 flex flex-col gap-2">
-            <a href="#" onclick="switchView('zap'); toggleMenu();" class="flex items-center gap-3 p-3 rounded-xl hover:bg-gray-100 dark:hover:bg-zinc-800 transition-colors">
-                <div class="w-8 h-8 rounded-lg bg-green-100 dark:bg-green-900/30 flex items-center justify-center text-green-600"><i class="fab fa-whatsapp"></i></div> Zap Entregas
-            </a>
-            <a href="#" onclick="switchView('scan'); toggleMenu();" class="flex items-center gap-3 p-3 rounded-xl hover:bg-gray-100 dark:hover:bg-zinc-800 transition-colors">
-                <div class="w-8 h-8 rounded-lg bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-600"><i class="fas fa-barcode"></i></div> Gestão de Lotes
-            </a>
-            <a href="#" onclick="openAdminGate(); toggleMenu();" class="flex items-center gap-3 p-3 rounded-xl hover:bg-blue-50 dark:hover:bg-blue-900/20 text-gray-700 dark:text-gray-200 transition-colors border-t border-gray-100 dark:border-zinc-800 mt-4">
-                <div class="w-8 h-8 rounded-lg bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-600"><i class="fas fa-shield-halved"></i></div> Painel Admin
-            </a>
-            <div class="mt-auto pt-4 border-t border-gray-100 dark:border-zinc-800">
-                <button onclick="logout()" class="flex items-center gap-3 p-3 w-full rounded-xl hover:bg-red-50 dark:hover:bg-red-900/20 text-red-600 transition-colors font-bold">
-                    <i class="fas fa-sign-out-alt"></i> Sair da Conta
-                </button>
-            </div>
+            <a href="#" onclick="switchView('zap'); toggleMenu();" class="flex items-center gap-3 p-3 rounded-xl hover:bg-gray-100 dark:hover:bg-zinc-800 transition-colors"><i class="fab fa-whatsapp text-green-600"></i> Zap Entregas</a>
+            <a href="#" onclick="switchView('scan'); toggleMenu();" class="flex items-center gap-3 p-3 rounded-xl hover:bg-gray-100 dark:hover:bg-zinc-800 transition-colors"><i class="fas fa-barcode text-blue-600"></i> Gestão de Lotes</a>
+            <div class="mt-auto pt-4 border-t dark:border-zinc-800"><button onclick="logout()" class="flex items-center gap-3 p-3 w-full rounded-xl text-red-600 font-bold transition-colors"><i class="fas fa-sign-out-alt"></i> Sair da Conta</button></div>
         </nav>
     </div>
 
-    <!-- VIEW: AUTH -->
     <main id="view-auth" class="flex-1 flex items-center justify-center p-6">
-        <div class="w-full max-w-sm bg-white dark:bg-zinc-900 p-8 rounded-3xl shadow-2xl border border-gray-100 dark:border-zinc-800 text-center">
+        <div class="w-full max-w-sm bg-white dark:bg-zinc-900 p-8 rounded-3xl shadow-2xl border dark:border-zinc-800 text-center">
             <div class="w-20 h-20 rounded-3xl bg-blue-600 flex items-center justify-center mx-auto mb-4 shadow-xl"><i class="fas fa-truck-fast text-4xl text-white"></i></div>
-            <h1 class="text-2xl font-bold mb-1">Multiferramentas</h1>
-            <p class="text-sm text-gray-500 mb-8">Gestão Cloud</p>
+            <h1 class="text-2xl font-bold mb-1 leading-tight">Multiferramentas</h1>
+            <p class="text-sm text-gray-500 mb-8 font-medium">Logística em Nuvem</p>
             <div class="space-y-4 text-left">
-                <div id="nameField" class="hidden">
-                    <label class="block text-[10px] font-bold text-gray-400 uppercase ml-1">Nome Completo</label>
-                    <input type="text" id="authName" class="w-full bg-gray-50 dark:bg-zinc-800 p-4 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 border border-transparent dark:border-zinc-700" placeholder="Seu nome">
-                </div>
-                <div>
-                    <label class="block text-[10px] font-bold text-gray-400 uppercase ml-1">E-mail ou Usuário</label>
-                    <input type="text" id="authEmail" class="w-full bg-gray-50 dark:bg-zinc-800 p-4 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 border border-transparent dark:border-zinc-700" placeholder="exemplo@gmail.com">
-                </div>
-                <div>
-                    <label class="block text-[10px] font-bold text-gray-400 uppercase ml-1">Senha</label>
-                    <input type="password" id="authPassword" class="w-full bg-gray-50 dark:bg-zinc-800 p-4 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 border border-transparent dark:border-zinc-700" placeholder="••••••••">
-                </div>
-                <div class="pt-2 space-y-3">
-                    <button id="loginBtn" onclick="handleAuth('login')" class="w-full bg-blue-600 hover:bg-blue-500 text-white py-4 rounded-xl font-bold transition-all btn-pulse">Entrar</button>
-                    <button id="registerBtn" onclick="handleAuth('register')" class="w-full bg-blue-600 hover:bg-blue-500 text-white py-4 rounded-xl font-bold transition-all btn-pulse hidden">Criar Conta</button>
-                    <p id="toggleText" class="text-center text-sm text-gray-500">Não tem conta? <a href="#" onclick="toggleAuthMode(true)" class="text-blue-500 font-bold">Crie uma agora</a></p>
-                </div>
+                <div id="nameField" class="hidden"><label class="block text-[10px] font-bold text-gray-400 uppercase ml-1">Nome</label><input type="text" id="authName" class="w-full bg-gray-50 dark:bg-zinc-800 p-4 rounded-xl border dark:border-zinc-700 outline-none focus:ring-2 focus:ring-blue-500" placeholder="Seu nome"></div>
+                <div><label class="block text-[10px] font-bold text-gray-400 uppercase ml-1">E-mail</label><input type="email" id="authEmail" class="w-full bg-gray-50 dark:bg-zinc-800 p-4 rounded-xl border dark:border-zinc-700 outline-none focus:ring-2 focus:ring-blue-500" placeholder="exemplo@gmail.com"></div>
+                <div><label class="block text-[10px] font-bold text-gray-400 uppercase ml-1">Senha</label><input type="password" id="authPassword" class="w-full bg-gray-50 dark:bg-zinc-800 p-4 rounded-xl border dark:border-zinc-700 outline-none focus:ring-2 focus:ring-blue-500" placeholder="••••••••"></div>
+                <button id="loginBtn" onclick="handleAuth('login')" class="w-full bg-blue-600 text-white py-4 rounded-xl font-bold transition-all btn-pulse mt-2">Entrar</button>
+                <button id="registerBtn" onclick="handleAuth('register')" class="w-full bg-blue-600 text-white py-4 rounded-xl font-bold transition-all btn-pulse hidden">Criar Conta</button>
+                <p id="toggleText" class="text-center text-sm text-gray-500">Não tem conta? <a href="#" onclick="toggleAuthMode(true)" class="text-blue-500 font-bold">Crie agora</a></p>
             </div>
         </div>
     </main>
 
-    <!-- VIEW: ZAP SEM ADD -->
-    <main id="view-zap" class="w-full max-w-md mx-auto p-4 pt-24 hidden flex-col justify-start min-h-screen pb-10">
-        <div class="bg-white dark:bg-zinc-900 p-5 rounded-2xl border border-gray-200 dark:border-zinc-700 shadow-xl">
-            <div class="flex gap-3 mb-3">
-                <div class="w-20 shrink-0">
-                    <label class="block text-[10px] font-bold text-gray-400 uppercase mb-1 ml-1">Parada</label>
-                    <input type="number" id="stopInput" class="w-full bg-gray-100 dark:bg-zinc-800 text-center py-4 rounded-xl border border-transparent dark:border-zinc-700 font-bold text-lg outline-none" placeholder="00">
-                </div>
-                <div class="flex-1">
-                    <label class="block text-[10px] font-bold text-gray-400 uppercase mb-1 ml-1">Telefone</label>
-                    <input type="tel" id="phoneInput" class="w-full bg-gray-100 dark:bg-zinc-800 px-4 py-4 rounded-xl border border-transparent dark:border-zinc-700 font-mono text-center text-lg outline-none" placeholder="(11) 99999-9999">
-                </div>
-            </div>
-            <div class="flex justify-between items-center px-1 mb-4">
-                <button onclick="pasteFromClipboard()" class="text-xs text-gray-500 hover:text-green-600 flex items-center gap-2 font-medium"><i class="far fa-clipboard"></i> Colar</button>
-                <button onclick="clearInputs()" class="text-xs text-gray-500 hover:text-red-500 flex items-center gap-2 font-medium"><i class="fas fa-trash-alt"></i> Limpar</button>
+    <main id="view-zap" class="w-full max-w-md mx-auto p-4 pt-24 hidden flex-col justify-start min-h-screen">
+        <div class="bg-white dark:bg-zinc-900 p-5 rounded-2xl border dark:border-zinc-700 shadow-xl">
+            <div class="flex gap-3 mb-4">
+                <div class="w-20"><label class="block text-[10px] font-bold text-gray-400 uppercase ml-1">Parada</label><input type="number" id="stopInput" class="w-full bg-gray-100 dark:bg-zinc-800 text-center py-4 rounded-xl font-bold text-lg outline-none focus:ring-2 focus:ring-green-500" placeholder="00"></div>
+                <div class="flex-1"><label class="block text-[10px] font-bold text-gray-400 uppercase ml-1">Telefone</label><input type="tel" id="phoneInput" class="w-full bg-gray-100 dark:bg-zinc-800 py-4 rounded-xl font-mono text-center text-lg outline-none focus:ring-2 focus:ring-green-500" placeholder="(11) 99999-9999"></div>
             </div>
             <textarea id="messageInput" class="w-full bg-gray-100 dark:bg-zinc-800 p-4 rounded-xl h-20 mb-4 resize-none text-sm outline-none">Olá. Entrega do Mercado Livre.</textarea>
-            <button onclick="openWhatsapp()" class="w-full bg-green-600 hover:bg-green-500 text-white font-bold py-4 rounded-xl shadow-lg transition-all btn-pulse mb-3 flex items-center justify-center gap-2"><span>Chamar Zap</span> <i class="fas fa-paper-plane"></i></button>
-            <button onclick="openHistoryModal()" class="w-full bg-gray-200 dark:bg-zinc-800 hover:bg-gray-300 py-3 rounded-xl transition-all flex items-center justify-center gap-2 text-sm font-bold text-gray-600 dark:text-gray-300"><i class="fas fa-history"></i> Histórico de Hoje</button>
+            <button onclick="openWhatsapp()" class="w-full bg-green-600 text-white font-bold py-4 rounded-xl shadow-lg btn-pulse mb-3">Chamar no Zap</button>
+            <button onclick="openHistoryModal()" class="w-full bg-gray-200 dark:bg-zinc-800 py-3 rounded-xl text-sm font-bold text-gray-600 dark:text-gray-300">Histórico de Hoje</button>
         </div>
     </main>
 
-    <!-- VIEW: SCAN PCT -->
     <main id="view-scan" class="w-full max-w-2xl mx-auto p-4 pt-24 hidden pb-20">
-        <header class="flex justify-between items-center mb-6 bg-white dark:bg-zinc-900 p-6 rounded-2xl shadow-sm border dark:border-zinc-700 text-center">
-            <h1 class="text-xl font-bold">Meus <span class="text-blue-600">Lotes</span></h1>
-            <button onclick="location.reload()" class="text-slate-400 hover:text-blue-500 transition-colors"><i class="fas fa-sync-alt text-xl"></i></button>
-        </header>
-
         <div id="userSection" class="bg-blue-600 rounded-2xl p-6 shadow-lg text-white mb-6 hidden">
-            <div class="flex justify-between items-center mb-4 text-sm font-bold">
-                <span>BIPAGEM ATIVA</span>
-                <button onclick="finalizeOperation()" class="bg-white/20 hover:bg-white/40 px-3 py-1.5 rounded-lg border border-white/30">Finalizar</button>
-            </div>
+            <div class="flex justify-between items-center mb-4"><span class="font-bold text-sm">BIPAGEM ATIVA</span><button onclick="finalizeOperation()" class="bg-white/20 px-3 py-1.5 rounded-lg border border-white/30 text-xs font-bold">Finalizar</button></div>
             <input type="text" id="barcodeInput" placeholder="Bipar código..." class="w-full p-4 bg-black/20 rounded-xl text-white outline-none placeholder-blue-100 font-mono mb-4">
-            <button onclick="toggleCamera()" id="camBtn" class="w-full py-4 bg-black/20 rounded-xl font-bold flex items-center justify-center gap-3 border border-white/10 hover:bg-black/30 transition-all"><i class="fas fa-camera"></i> <span id="camBtnText">Scanner Câmera</span></button>
+            <button onclick="toggleCamera()" id="camBtn" class="w-full py-4 bg-black/20 rounded-xl font-bold flex items-center justify-center gap-3 border border-white/10"><i class="fas fa-camera"></i> <span id="camBtnText">Scanner Câmera</span></button>
         </div>
-
-        <div id="startSection" class="bg-white dark:bg-zinc-900 rounded-2xl p-8 shadow-sm border dark:border-zinc-700 text-center">
-            <div class="mb-4 bg-blue-50 dark:bg-blue-900/20 w-16 h-16 rounded-full flex items-center justify-center mx-auto text-blue-600"><i class="fas fa-box 2xl"></i></div>
-            <h3 class="font-bold mb-4 uppercase text-xs tracking-widest text-gray-500">Operação de Lote</h3>
-            <div class="flex gap-3">
-                <button onclick="startNewBatch('out')" class="flex-1 py-4 bg-blue-600 text-white rounded-2xl font-bold shadow-lg">Adicionar</button>
-                <button onclick="startNewBatch('return')" class="flex-1 py-4 bg-green-600 text-white rounded-2xl font-bold shadow-lg">Devolver</button>
-            </div>
+        <div id="startSection" class="bg-white dark:bg-zinc-900 rounded-2xl p-8 border dark:border-zinc-700 text-center shadow-xl">
+            <h3 class="font-bold uppercase text-xs tracking-widest text-gray-500 mb-4">Operação de Lote</h3>
+            <div class="flex gap-3"><button onclick="startNewBatch('out')" class="flex-1 py-4 bg-blue-600 text-white rounded-2xl font-bold shadow-lg">Adicionar</button><button onclick="startNewBatch('return')" class="flex-1 py-4 bg-green-600 text-white rounded-2xl font-bold shadow-lg">Devolver</button></div>
         </div>
-
-        <div id="cameraContainer" class="hidden mb-6 mx-auto w-full max-w-[300px] aspect-square bg-black rounded-2xl overflow-hidden relative border-4 border-blue-500/20">
+        <div id="cameraContainer" class="hidden mb-6 mx-auto w-full max-w-[300px] aspect-square bg-black rounded-2xl overflow-hidden relative border-4 border-blue-500/20 shadow-2xl">
             <video id="readerVideo" class="w-full h-full object-cover scale-105" autoplay muted playsinline></video>
-            <div class="absolute inset-0 flex items-center justify-center pointer-events-none z-10"><div class="w-4/5 h-0.5 bg-green-500 shadow-[0_0_10px_#22c55e]"></div></div>
-            <button onclick="stopCamera()" class="absolute top-3 right-3 bg-red-500 text-white w-10 h-10 rounded-full flex items-center justify-center shadow-lg z-20"><i class="fas fa-times"></i></button>
+            <div class="absolute inset-0 flex items-center justify-center pointer-events-none z-10"><div class="w-4/5 h-0.5 bg-green-500 shadow-[0_0_10px_#22c55e] animate-pulse"></div></div>
+            <button onclick="stopCamera()" class="absolute top-3 right-3 bg-red-500 text-white w-10 h-10 rounded-full z-20"><i class="fas fa-times"></i></button>
         </div>
-
-        <div class="grid grid-cols-4 gap-2 my-6">
-            <div class="bg-white dark:bg-zinc-900 p-3 rounded-xl border dark:border-zinc-700 text-center"><span class="text-[8px] font-bold text-blue-500 uppercase">Em Rota</span><p id="statPending" class="text-lg font-bold">0</p></div>
-            <div class="bg-white dark:bg-zinc-900 p-3 rounded-xl border dark:border-zinc-700 text-center"><span class="text-[8px] font-bold text-green-500 uppercase">OK</span><p id="statOk" class="text-lg font-bold">0</p></div>
-            <div class="bg-white dark:bg-zinc-900 p-3 rounded-xl border dark:border-zinc-700 text-center"><span class="text-[8px] font-bold text-red-500 uppercase">Falta</span><p id="statMissing" class="text-lg font-bold">0</p></div>
-            <div class="bg-white dark:bg-zinc-900 p-3 rounded-xl border dark:border-zinc-700 text-center"><span class="text-[8px] font-bold text-gray-500 uppercase">Perdido</span><p id="statLost" class="text-lg font-bold">0</p></div>
+        <div class="grid grid-cols-4 gap-2 my-6 text-center">
+            <div class="bg-white dark:bg-zinc-900 p-3 rounded-xl border dark:border-zinc-700"><span class="text-[8px] font-bold text-blue-500 uppercase">Rota</span><p id="statPending" class="text-lg font-bold">0</p></div>
+            <div class="bg-white dark:bg-zinc-900 p-3 rounded-xl border dark:border-zinc-700"><span class="text-[8px] font-bold text-green-500 uppercase">OK</span><p id="statOk" class="text-lg font-bold">0</p></div>
+            <div class="bg-white dark:bg-zinc-900 p-3 rounded-xl border dark:border-zinc-700"><span class="text-[8px] font-bold text-red-500 uppercase">Falta</span><p id="statMissing" class="text-lg font-bold">0</p></div>
+            <div class="bg-white dark:bg-zinc-900 p-3 rounded-xl border dark:border-zinc-700"><span class="text-[8px] font-bold text-gray-500 uppercase">Perdido</span><p id="statLost" class="text-lg font-bold">0</p></div>
         </div>
-
-        <div id="packageList" class="bg-white dark:bg-zinc-900 rounded-2xl shadow-sm border dark:border-zinc-700 divide-y dark:divide-zinc-800 max-h-[500px] overflow-y-auto no-scrollbar">
-            <div class="p-12 text-center text-slate-400 italic text-sm">Lista vazia.</div>
-        </div>
-    </main>
-
-    <!-- VIEW: ADMIN INTEGRADO (Otimizado para Desktop) -->
-    <main id="view-admin" class="w-full max-w-[1200px] mx-auto p-4 pt-20 hidden min-h-screen">
-        <div class="flex flex-col lg:flex-row gap-6 h-[calc(100vh-100px)]">
-            
-            <!-- Coluna 1: Lista de Usuários -->
-            <div class="w-full lg:w-1/3 flex flex-col bg-white dark:bg-zinc-900 rounded-3xl border dark:border-zinc-700 shadow-xl overflow-hidden">
-                <div class="p-5 border-b dark:border-zinc-800 bg-gray-50 dark:bg-zinc-800/30">
-                    <h2 class="text-sm font-bold uppercase tracking-widest text-blue-600 mb-4"><i class="fas fa-users"></i> Entregadores</h2>
-                    <div class="relative">
-                        <input type="text" oninput="window.filterAdminUsers(this.value)" placeholder="Pesquisar por nome..." class="w-full p-3 pl-10 text-sm bg-white dark:bg-zinc-900 border dark:border-zinc-700 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 shadow-sm">
-                        <i class="fas fa-search absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 text-xs"></i>
-                    </div>
-                </div>
-                <div id="adminUserList" class="flex-1 overflow-y-auto custom-scrollbar p-2 space-y-1">
-                    <p class="p-4 text-center text-gray-500 text-xs italic">Aguardando usuários...</p>
-                </div>
-            </div>
-
-            <!-- Coluna 2: Detalhes e Monitor de Pacotes -->
-            <div class="w-full lg:w-2/3 flex flex-col gap-4 overflow-hidden">
-                
-                <div id="admin-user-detail" class="hidden flex flex-col h-full">
-                    
-                    <!-- Header do Usuário Selecionado -->
-                    <div class="bg-white dark:bg-zinc-900 p-6 rounded-3xl border dark:border-zinc-800 shadow-xl mb-4">
-                        <div class="flex flex-col sm:flex-row justify-between items-center gap-4">
-                            <div class="text-center sm:text-left">
-                                <h2 id="admin-selected-name" class="text-2xl font-bold text-gray-800 dark:text-white leading-tight">Nome do Entregador</h2>
-                                <p id="admin-selected-email" class="text-xs text-gray-500 font-medium tracking-wide">email@exemplo.com</p>
-                            </div>
-                            <div class="flex gap-2 shrink-0">
-                                <button id="admin-block-btn" class="px-5 py-2.5 rounded-xl text-xs font-bold shadow-lg transition-transform active:scale-95 flex items-center gap-2">
-                                    <i class="fas fa-user-lock"></i> <span>Bloquear</span>
-                                </button>
-                            </div>
-                        </div>
-                        
-                        <div class="grid grid-cols-4 gap-3 mt-6">
-                            <div class="bg-blue-600/10 p-3 rounded-2xl border border-blue-600/20 text-center">
-                                <span class="text-[9px] font-black text-blue-600 uppercase">Rota</span>
-                                <p id="adm-det-pending" class="text-xl font-black text-blue-600">0</p>
-                            </div>
-                            <div class="bg-green-600/10 p-3 rounded-2xl border border-green-600/20 text-center">
-                                <span class="text-[9px] font-black text-green-600 uppercase">OK</span>
-                                <p id="adm-det-ok" class="text-xl font-black text-green-600">0</p>
-                            </div>
-                            <div class="bg-red-600/10 p-3 rounded-2xl border border-red-600/20 text-center">
-                                <span class="text-[9px] font-black text-red-600 uppercase">Falta</span>
-                                <p id="adm-det-missing" class="text-xl font-black text-red-600">0</p>
-                            </div>
-                            <div class="bg-zinc-600/10 p-3 rounded-2xl border border-zinc-600/20 text-center">
-                                <span class="text-[9px] font-black text-gray-500 uppercase">Perdido</span>
-                                <p id="adm-det-lost" class="text-xl font-black text-gray-500">0</p>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Tabela de Pacotes com Filtros -->
-                    <div class="flex-1 bg-white dark:bg-zinc-900 rounded-3xl border dark:border-zinc-800 shadow-xl overflow-hidden flex flex-col">
-                        <div class="p-4 border-b dark:border-zinc-800 bg-gray-50 dark:bg-zinc-800/30 flex flex-col sm:flex-row gap-3 items-center justify-between">
-                            <div class="relative flex-1 w-full">
-                                <input type="text" id="adminPkgSearch" oninput="window.renderAdminPackages()" placeholder="Localizar código..." class="w-full p-2.5 pl-9 text-xs bg-white dark:bg-zinc-900 border dark:border-zinc-700 rounded-xl outline-none focus:ring-2 focus:ring-blue-500">
-                                <i class="fas fa-barcode absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs"></i>
-                            </div>
-                            <select id="adminStatusFilter" onchange="window.renderAdminPackages()" class="w-full sm:w-auto p-2.5 text-xs bg-white dark:bg-zinc-900 border dark:border-zinc-700 rounded-xl font-bold outline-none cursor-pointer">
-                                <option value="all">Todos os Status</option>
-                                <option value="bipados">Em Rota</option>
-                                <option value="devolvidos">OK (Devolvido)</option>
-                                <option value="faltas">Falta</option>
-                                <option value="perdidos">Perdido</option>
-                            </select>
-                        </div>
-                        <div id="adminPackageTable" class="flex-1 overflow-y-auto custom-scrollbar divide-y dark:divide-zinc-800">
-                            <p class="p-12 text-center text-gray-500 text-xs italic">Selecione um entregador ao lado para auditar.</p>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Estado Vazio -->
-                <div id="admin-empty-state" class="flex flex-col items-center justify-center h-full bg-white dark:bg-zinc-900 rounded-[40px] border-4 border-dashed border-gray-100 dark:border-zinc-800 opacity-40 text-center p-10 transition-all">
-                    <div class="w-24 h-24 rounded-full bg-blue-600/10 flex items-center justify-center mb-6 text-blue-600">
-                        <i class="fas fa-users-gear text-5xl"></i>
-                    </div>
-                    <h2 class="text-xl font-bold mb-2">Monitoramento Administrativo</h2>
-                    <p class="text-sm font-medium max-w-xs">Selecione um entregador na lista lateral para monitorar pacotes e status em tempo real.</p>
-                </div>
-
-            </div>
-        </div>
+        <div id="packageList" class="bg-white dark:bg-zinc-900 rounded-2xl border dark:border-zinc-700 divide-y dark:divide-zinc-800 max-h-[500px] overflow-y-auto no-scrollbar"></div>
     </main>
 
     <script>
@@ -677,13 +276,8 @@
         function switchView(v) {
             document.getElementById('view-zap').classList.add('hidden');
             document.getElementById('view-scan').classList.add('hidden');
-            document.getElementById('view-admin').classList.add('hidden');
             document.getElementById('view-' + v).classList.remove('hidden');
             stopCamera();
-            if (v === 'admin') {
-                document.getElementById('admin-empty-state').classList.remove('hidden');
-                document.getElementById('admin-user-detail').classList.add('hidden');
-            }
         }
 
         function startNewBatch(mode) {
@@ -703,30 +297,12 @@
 
             if(isConferenceMode) {
                 const pkg = allPackages.find(p => p.id === code && p.collection === 'bipados');
-                if(pkg) {
-                    await window.moveToDevolvedFirebase(code);
-                    showToast("Item Devolvido!", "bg-green-600", "fa-check");
-                    playBeep(true);
-                } else {
-                    const alreadyDevolved = allPackages.find(p => p.id === code && p.collection === 'devolvidos');
-                    if(alreadyDevolved) {
-                        showToast("Já foi devolvido!", "bg-yellow-500", "fa-info-circle");
-                        playBeep(false);
-                    } else {
-                        showToast("ERRO: Não registrado!", "bg-red-600", "fa-times-circle");
-                        playBeep(false);
-                    }
-                }
+                if(pkg) { await window.moveToDevolvedFirebase(code); showToast("Item Devolvido!", "bg-green-600", "fa-check"); playBeep(true); }
+                else { showToast("Não registrado ou já OK", "bg-red-600", "fa-times"); playBeep(false); }
             } else {
                 const existing = allPackages.find(p => p.id === code && p.collection === 'bipados');
-                if(existing) {
-                    showToast("Já está em rota!", "bg-yellow-500", "fa-info-circle");
-                    playBeep(false);
-                } else {
-                    await window.saveToFirebase(code);
-                    showToast("Adicionado em Rota", "bg-blue-600", "fa-plus");
-                    playBeep(true);
-                }
+                if(existing) { showToast("Já está em rota!", "bg-yellow-500", "fa-info"); playBeep(false); }
+                else { await window.saveToFirebase(code); showToast("Adicionado!", "bg-blue-600", "fa-plus"); playBeep(true); }
             }
         }
 
@@ -742,127 +318,28 @@
 
         function updateScanUI() {
             const list = document.getElementById('packageList');
-            if(allPackages.length === 0) {
-                list.innerHTML = `<p class="p-12 text-center text-slate-400 italic text-sm">Nenhum registro.</p>`;
-            } else {
-                list.innerHTML = allPackages.map(p => {
-                    let statusClass = "bg-blue-100 text-blue-700"; let rowClass = "row-route";
-                    if(p.collection === 'devolvidos') { statusClass = "bg-green-100 text-green-700"; rowClass = "row-done"; }
-                    if(p.collection === 'faltas') { statusClass = "bg-red-100 text-red-700"; rowClass = "row-missing"; }
-                    if(p.collection === 'perdidos') { statusClass = "bg-zinc-800 text-white"; rowClass = "row-lost"; }
-                    return `<div class="p-4 flex justify-between items-center transition-all ${rowClass}">
-                        <div><div class="flex items-center gap-2"><span class="font-mono font-bold text-sm text-gray-700 dark:text-gray-200">${p.id}</span>
-                        <span class="text-[8px] font-bold px-1.5 py-0.5 rounded ${statusClass}">${p.status.toUpperCase()}</span></div>
-                        <p class="text-[9px] text-slate-400 mt-0.5 uppercase tracking-tighter">Por: ${p.user} • ${p.time}</p></div>
-                    </div>`;
-                }).join('');
-            }
+            if(allPackages.length === 0) list.innerHTML = `<p class="p-12 text-center text-slate-400 italic text-sm">Vazio.</p>`;
+            else list.innerHTML = allPackages.map(p => {
+                let sCol = "bg-blue-100 text-blue-700"; let rCol = "row-route";
+                if(p.collection === 'devolvidos') { sCol = "bg-green-100 text-green-700"; rCol = "row-done"; }
+                if(p.collection === 'faltas') { sCol = "bg-red-100 text-red-700"; rCol = "row-missing"; }
+                if(p.collection === 'perdidos') { sCol = "bg-zinc-800 text-white"; rCol = "row-lost"; }
+                return `<div class="p-4 flex justify-between items-center ${rCol} border-b dark:border-zinc-800/50 transition-all"><div><div class="flex items-center gap-2"><span class="font-mono font-bold text-sm text-gray-700 dark:text-gray-200">${p.id}</span><span class="text-[8px] font-bold px-1.5 py-0.5 rounded ${sCol}">${p.status.toUpperCase()}</span></div><p class="text-[9px] text-slate-400 mt-0.5 uppercase tracking-tighter">${p.time}</p></div></div>`;
+            }).join('');
             document.getElementById('statPending').innerText = allPackages.filter(p => p.collection === 'bipados').length;
             document.getElementById('statOk').innerText = allPackages.filter(p => p.collection === 'devolvidos').length;
             document.getElementById('statMissing').innerText = allPackages.filter(p => p.collection === 'faltas').length;
             document.getElementById('statLost').innerText = allPackages.filter(p => p.collection === 'perdidos').length;
         }
 
-        const phoneInput = document.getElementById('phoneInput');
-        phoneInput.addEventListener('input', function (e) {
-            let v = e.target.value.replace(/\D/g, ''); 
-            if (v.length > 11) v = v.slice(0, 11);
-            if (v.length > 10) v = v.replace(/^(\d\d)(\d{5})(\d{4}).*/, "($1) $2-$3");
-            else if (v.length > 6) v = v.replace(/^(\d\d)(\d{4})(\d{0,4}).*/, "($1) $2-$3");
-            else if (v.length > 2) v = v.replace(/^(\d\d)(\d{0,5}).*/, "($1) $2");
-            else if (v.length > 0) v = v.replace(/^(\d*)/, "($1");
-            e.target.value = v;
-        });
-        function clearInputs() { phoneInput.value = ""; document.getElementById('stopInput').value = ""; }
-        async function pasteFromClipboard() {
-            try {
-                const text = await navigator.clipboard.readText();
-                const clean = text.replace(/\D/g, '');
-                if (clean.length >= 10) { phoneInput.value = clean.startsWith('55') ? clean.substring(2) : clean; phoneInput.dispatchEvent(new Event('input')); }
-            } catch (err) { }
-        }
-        function openWhatsapp(override = null) {
-            let n = override || phoneInput.value.replace(/\D/g, '');
-            if (n.length < 10) return showToast("Número inválido", "bg-red-500", "fa-exclamation");
-            let m = encodeURIComponent(document.getElementById('messageInput').value);
-            if (!override) saveToHistory(n, document.getElementById('stopInput').value);
-            window.open(`https://api.whatsapp.com/send?phone=55${n}&text=${m}`, '_blank');
-        }
-        function saveToHistory(n, s) {
-            let h = JSON.parse(localStorage.getItem('wa_history_v2') || '[]');
-            const t = new Date().toLocaleDateString('pt-BR');
-            h = h.filter(i => !(i.phone === n && i.date === t));
-            h.unshift({ phone: n, stop: s, date: t, timestamp: Date.now() });
-            localStorage.setItem('wa_history_v2', JSON.stringify(h));
-        }
-        function openHistoryModal() { document.getElementById('historyModal').classList.remove('hidden'); renderHistoryList(); }
-        function closeHistoryModal() { document.getElementById('historyModal').classList.add('hidden'); }
-        function renderHistoryList() {
-            const list = document.getElementById('modalHistoryList');
-            const h = JSON.parse(localStorage.getItem('wa_history_v2') || '[]');
-            const t = new Date().toLocaleDateString('pt-BR');
-            const todays = h.filter(i => i.date === t);
-            if (todays.length === 0) { list.innerHTML = `<p class="text-center py-8 text-gray-400 text-sm italic">Nenhum contato hoje.</p>`; return; }
-            list.innerHTML = todays.map(i => `<div class="flex items-center justify-between bg-gray-50 dark:bg-zinc-800 p-3 rounded-xl border dark:border-zinc-700">
-                <div class="flex items-center gap-2"><span class="bg-gray-200 dark:bg-zinc-700 px-2 py-0.5 rounded text-[10px] font-bold">P:${i.stop || '-'}</span><span class="text-xs font-mono text-gray-800 dark:text-gray-200">${i.phone}</span></div>
-                <button onclick="openWhatsapp('${i.phone}')" class="text-green-500 text-xl"><i class="fab fa-whatsapp"></i></button></div>`).join('');
-        }
-        function clearDailyHistory() {
-            const t = new Date().toLocaleDateString('pt-BR');
-            let h = JSON.parse(localStorage.getItem('wa_history_v2') || '[]');
-            localStorage.setItem('wa_history_v2', JSON.stringify(h.filter(i => i.date !== t)));
-            renderHistoryList();
-        }
-        function saveHistoryPDF() {
-            const h = JSON.parse(localStorage.getItem('wa_history_v2') || '[]');
-            const t = new Date().toLocaleDateString('pt-BR');
-            const d = h.filter(i => i.date === t).reverse();
-            if (d.length === 0) return;
-            const { jsPDF } = window.jspdf; const doc = new jsPDF();
-            doc.text(`Relatório de Contatos - ${t}`, 14, 20);
-            doc.autoTable({ head: [['Parada', 'Telefone', 'Horário']], body: d.map(i => [i.stop || '-', i.phone, new Date(i.timestamp).toLocaleTimeString()]), startY: 30 });
-            doc.save(`entregas_${t}.pdf`);
-        }
-
         function initAudio() { if(!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)(); if(audioCtx.state === 'suspended') audioCtx.resume(); }
-        function playBeep(s) {
-            if(!audioCtx) return; const o = audioCtx.createOscillator(); const g = audioCtx.createGain();
-            o.type = s ? 'square' : 'sawtooth'; o.frequency.setValueAtTime(s ? 2000 : 180, audioCtx.currentTime);
-            g.gain.setValueAtTime(0.3, audioCtx.currentTime); g.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
-            o.connect(g); g.connect(audioCtx.destination); o.start(); o.stop(audioCtx.currentTime + 0.1);
-        }
-
-        function showToast(m, c, i) {
-            const container = document.getElementById('toast-container');
-            const toast = document.createElement('div');
-            toast.className = `toast-item ${c}`;
-            toast.innerHTML = `<i class="fas ${i || 'fa-info-circle'}"></i> <span>${m}</span>`;
-            container.appendChild(toast);
-            setTimeout(() => toast.classList.add('show'), 10);
-            setTimeout(() => { toast.classList.remove('show'); setTimeout(() => toast.remove(), 400); }, 4000);
-        }
-
+        function playBeep(s) { if(!audioCtx) return; const o = audioCtx.createOscillator(); const g = audioCtx.createGain(); o.type = s ? 'square' : 'sawtooth'; o.frequency.setValueAtTime(s ? 2000 : 180, audioCtx.currentTime); g.gain.setValueAtTime(0.3, audioCtx.currentTime); g.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1); o.connect(g); g.connect(audioCtx.destination); o.start(); o.stop(audioCtx.currentTime + 0.1); }
+        function showToast(m, c, i) { const container = document.getElementById('toast-container'); const toast = document.createElement('div'); toast.className = `toast-item ${c}`; toast.innerHTML = `<i class="fas ${i}"></i> <span>${m}</span>`; container.appendChild(toast); setTimeout(() => toast.classList.add('show'), 10); setTimeout(() => { toast.classList.remove('show'); setTimeout(() => toast.remove(), 400); }, 4000); }
         function handleManualInput() { const i = document.getElementById('barcodeInput'); if(i.value.trim()) processCode(i.value.trim()); i.value = ""; }
         document.getElementById('barcodeInput').addEventListener('keypress', (e) => { if(e.key === 'Enter') handleManualInput(); });
-
-        async function toggleCamera() {
-            initAudio(); if(isCameraActive) { stopCamera(); return; }
-            document.getElementById('cameraContainer').classList.remove('hidden'); document.getElementById('camBtnText').innerText = "Parar";
-            if(!codeReader) codeReader = new ZXing.BrowserMultiFormatReader();
-            isCameraActive = true;
-            try {
-                await codeReader.decodeFromConstraints({ video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } } }, 'readerVideo', (res) => { if(res) processCode(res.getText()); });
-                setTimeout(() => {
-                    const v = document.getElementById('readerVideo');
-                    if (v && v.srcObject) {
-                        const t = v.srcObject.getVideoTracks()[0];
-                        const c = t.getCapabilities();
-                        if (c && c.zoom) t.applyConstraints({ advanced: [{ zoom: Math.min(2.0, c.zoom.max) }] });
-                    }
-                }, 1000);
-            } catch (err) { stopCamera(); showToast("Erro câmera", "bg-red-500", "fa-video-slash"); }
-        }
+        async function toggleCamera() { initAudio(); if(isCameraActive) { stopCamera(); return; } document.getElementById('cameraContainer').classList.remove('hidden'); document.getElementById('camBtnText').innerText = "Parar"; if(!codeReader) codeReader = new ZXing.BrowserMultiFormatReader(); isCameraActive = true; try { await codeReader.decodeFromConstraints({ video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } } }, 'readerVideo', (res) => { if(res) processCode(res.getText()); }); setTimeout(() => { const v = document.getElementById('readerVideo'); if (v && v.srcObject) { const t = v.srcObject.getVideoTracks()[0]; const c = t.getCapabilities(); if (c && c.zoom) t.applyConstraints({ advanced: [{ zoom: Math.min(2.0, c.zoom.max) }] }); } }, 1000); } catch (err) { stopCamera(); showToast("Erro câmera", "bg-red-500", "fa-video-slash"); } }
         function stopCamera() { if(codeReader) codeReader.reset(); isCameraActive = false; document.getElementById('cameraContainer').classList.add('hidden'); document.getElementById('camBtnText').innerText = "Scanner Câmera"; }
+        window.toggleAuthMode = (r) => { document.getElementById('nameField').classList.toggle('hidden', !r); document.getElementById('loginBtn').classList.toggle('hidden', r); document.getElementById('registerBtn').classList.toggle('hidden', !r); document.getElementById('toggleText').innerHTML = r ? 'Já tem conta? <a href="#" onclick="toggleAuthMode(false)" class="text-blue-500 font-bold">Faça login</a>' : 'Não tem conta? <a href="#" onclick="toggleAuthMode(true)" class="text-blue-500 font-bold">Crie agora</a>'; };
     </script>
 </body>
 </html>
