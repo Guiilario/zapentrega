@@ -25,8 +25,8 @@
             <h1 class="text-2xl font-bold mb-1">Painel Central</h1>
             <p class="text-xs text-gray-500 uppercase font-bold tracking-[0.2em] mb-8">Administração</p>
             <div class="space-y-4 text-left">
-                <div><label class="block text-[10px] font-bold text-gray-400 uppercase ml-1 mb-1">Usuário</label><input type="text" id="adminUser" class="w-full p-4 bg-gray-50 dark:bg-zinc-800 rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 border dark:border-zinc-700" placeholder="Ilario"></div>
-                <div><label class="block text-[10px] font-bold text-gray-400 uppercase ml-1 mb-1">Senha</label><input type="password" id="adminPass" class="w-full p-4 bg-gray-50 dark:bg-zinc-800 rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 border dark:border-zinc-700" placeholder="ilario2025"></div>
+                <div><label class="block text-[10px] font-bold text-gray-400 uppercase ml-1 mb-1">Usuário</label><input type="text" id="adminUser" class="w-full p-4 bg-gray-50 dark:bg-zinc-800 rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 border dark:border-zinc-700" placeholder="admin"></div>
+                <div><label class="block text-[10px] font-bold text-gray-400 uppercase ml-1 mb-1">Senha</label><input type="password" id="adminPass" class="w-full p-4 bg-gray-50 dark:bg-zinc-800 rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 border dark:border-zinc-700" placeholder="autenticação"></div>
                 <button onclick="adminLogin()" class="w-full bg-blue-600 py-4 rounded-2xl font-bold text-white shadow-xl active:scale-95 transition-all mt-4">Acessar Sistema</button>
             </div>
         </div>
@@ -107,7 +107,7 @@
         window.adminLogin = async () => {
             const user = document.getElementById('adminUser').value.trim();
             const pass = document.getElementById('adminPass').value;
-            let email = user.toLowerCase() === "ilario" ? "admin@admin.com" : user;
+            let email = user.toLowerCase() === "admin" ? "admin@admin.com" : user;
             try { await signInWithEmailAndPassword(auth, email, pass); showToast("Acesso Autorizado", "bg-green-600", "fa-check"); }
             catch (err) { showToast("Dados incorretos", "bg-red-600", "fa-times"); }
         };
