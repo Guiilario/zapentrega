@@ -46,6 +46,7 @@
         let currentUser = null;
         let selectedAdminUserId = null;
         let currentPackageListeners = [];
+        let adminPackageData = []; // Cache para filtros locais no admin
 
         const allowedDomains = [
             'gmail.com', 'hotmail.com', 'outlook.com', 'live.com', 
@@ -74,9 +75,6 @@
 
         onAuthStateChanged(auth, async (user) => {
             if (user) {
-                // Registrar log de quem entrou
-                console.log("Usuário logado:", user.email);
-
                 const userDoc = await getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'userRegistry', user.uid));
                 if (userDoc.exists() && userDoc.data().status === 'bloqueado') {
                     showToast("Conta bloqueada pelo administrador.", "bg-red-600", "fa-user-lock");
@@ -93,7 +91,6 @@
                 const nameElements = document.querySelectorAll('.user-display-name');
                 nameElements.forEach(el => el.innerText = user.displayName || "Usuário");
                 
-                // Se for o admin logado, carregar diretório de usuários imediatamente
                 if (user.email === 'admin@admin.com') {
                     loadAdminUserDirectory();
                 }
@@ -112,7 +109,6 @@
             const password = document.getElementById('authPassword').value;
             const name = document.getElementById('authName').value.trim();
 
-            // Atalho para admin conforme solicitado
             if (email.toLowerCase() === "ilario") email = "admin@admin.com";
 
             if (!email || !password) return showToast("Preencha e-mail e senha", "bg-red-500", "fa-exclamation-circle");
@@ -130,9 +126,8 @@
                     showToast("Conta criada!", "bg-green-600", "fa-user-plus");
                 }
             } catch (error) {
-                console.error("Erro Auth:", error.code);
                 let msg = "Erro na autenticação";
-                if (error.code === "auth/invalid-credential") msg = "E-mail ou senha incorretos";
+                if (error.code === "auth/invalid-credential") msg = "Dados incorretos";
                 showToast(msg, "bg-red-500", "fa-times-circle");
             }
         };
@@ -147,11 +142,7 @@
             let tempPackages = { bipados: [], devolvidos: [], faltas: [], perdidos: [] };
 
             collections.forEach(colName => {
-                const q = query(
-                    collection(db, 'artifacts', appId, 'users', userId, colName), 
-                    orderBy("timestamp", "desc")
-                );
-                
+                const q = query(collection(db, 'artifacts', appId, 'users', userId, colName), orderBy("timestamp", "desc"));
                 const unsub = onSnapshot(q, (snapshot) => {
                     tempPackages[colName] = [];
                     snapshot.forEach(doc => {
@@ -162,16 +153,13 @@
                     allPackages = [...tempPackages.bipados, ...tempPackages.devolvidos, ...tempPackages.faltas, ...tempPackages.perdidos];
                     allPackages.sort((a, b) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0));
                     updateScanUI();
-                }, (error) => {
-                    console.error(`Erro ao ler coleção ${colName}:`, error);
                 });
                 listeners.push(unsub);
             });
         }
 
         async function processLostItems(userId) {
-            const today = new Date();
-            today.setHours(0, 0, 0, 0);
+            const today = new Date(); today.setHours(0, 0, 0, 0);
             const q = query(collection(db, 'artifacts', appId, 'users', userId, 'faltas'));
             const snapshot = await getDocs(q);
             const batch = writeBatch(db);
@@ -193,10 +181,7 @@
             if (!currentUser) return;
             try {
                 await addDoc(collection(db, 'artifacts', appId, 'users', currentUser.uid, 'bipados'), {
-                    id: code,
-                    user: currentUser.displayName || "Entregador",
-                    status: 'Em rota',
-                    timestamp: serverTimestamp()
+                    id: code, user: currentUser.displayName || "Entregador", status: 'Em rota', timestamp: serverTimestamp()
                 });
             } catch (e) { console.error(e); }
         };
@@ -241,9 +226,6 @@
                 adminUserList = [];
                 snap.forEach(doc => adminUserList.push(doc.data()));
                 renderAdminUserList();
-            }, (err) => {
-                console.error("Erro Admin User Directory:", err);
-                showToast("Erro ao carregar usuários. Verifique as regras de segurança.", "bg-red-600");
             });
             adminListeners.push(unsub);
         }
@@ -252,15 +234,14 @@
             const list = document.getElementById('adminUserList');
             if (!list) return;
             const filtered = adminUserList.filter(u => u.name.toLowerCase().includes(filter.toLowerCase()));
-            
-            if (filtered.length === 0) { list.innerHTML = `<p class="p-4 text-center text-gray-500 text-xs italic">Nenhum usuário encontrado.</p>`; return; }
+            if (filtered.length === 0) { list.innerHTML = `<p class="p-4 text-center text-gray-500 text-xs italic">Nenhum usuário.</p>`; return; }
 
             list.innerHTML = filtered.map(u => `
-                <div onclick="selectAdminUser('${u.uid}')" class="p-3 border-b dark:border-zinc-800 cursor-pointer hover:bg-gray-50 dark:hover:bg-zinc-800 transition-all ${selectedAdminUserId === u.uid ? 'bg-blue-500/10 border-l-4 border-l-blue-500' : ''}">
-                    <div class="flex items-center gap-2 truncate text-left">
-                        <div class="w-6 h-6 rounded-full bg-blue-600 flex items-center justify-center text-white text-[10px] font-bold shrink-0">${u.name.charAt(0)}</div>
-                        <div class="flex-1 truncate"><h3 class="font-bold text-[11px] truncate">${u.name}</h3><p class="text-[9px] text-gray-500">${u.email}</p></div>
-                        <div class="w-1.5 h-1.5 rounded-full ${u.status === 'bloqueado' ? 'bg-red-500' : 'bg-green-500'}"></div>
+                <div onclick="selectAdminUser('${u.uid}')" class="p-4 border-b dark:border-zinc-800 cursor-pointer hover:bg-gray-50 dark:hover:bg-zinc-800 transition-all ${selectedAdminUserId === u.uid ? 'bg-blue-500/10 border-l-4 border-l-blue-500' : ''}">
+                    <div class="flex items-center gap-3 truncate text-left">
+                        <div class="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-white text-xs font-bold shrink-0">${u.name.charAt(0)}</div>
+                        <div class="flex-1 truncate"><h3 class="font-bold text-xs truncate">${u.name}</h3><p class="text-[9px] text-gray-500">${u.email}</p></div>
+                        <div class="w-2 h-2 rounded-full ${u.status === 'bloqueado' ? 'bg-red-500' : 'bg-green-500'}"></div>
                     </div>
                 </div>
             `).join('');
@@ -275,7 +256,8 @@
             document.getElementById('admin-selected-email').innerText = user.email;
             
             const b = document.getElementById('admin-block-btn');
-            b.innerText = user.status === 'bloqueado' ? 'Desbloquear' : 'Bloquear';
+            b.className = user.status === 'bloqueado' ? "px-4 py-2 bg-green-600 text-white rounded-xl text-xs font-bold shadow-md" : "px-4 py-2 bg-red-600 text-white rounded-xl text-xs font-bold shadow-md";
+            b.innerText = user.status === 'bloqueado' ? 'Desbloquear' : 'Bloquear Acesso';
             b.onclick = () => toggleUserLockAdmin(uid, user.status);
             
             renderAdminUserList();
@@ -285,7 +267,7 @@
         async function toggleUserLockAdmin(uid, current) {
             const next = current === 'bloqueado' ? 'ativo' : 'bloqueado';
             await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'userRegistry', uid), { status: next });
-            showToast(`Usuário ${next}`, "bg-yellow-600");
+            showToast(`Usuário ${next}`, "bg-blue-600");
         }
 
         function initAdminUserPackagesListener(userId) {
@@ -299,27 +281,33 @@
                 const unsub = onSnapshot(q, (snap) => {
                     temp[col] = [];
                     snap.forEach(d => temp[col].push({ ...d.data(), fid: d.id, colName: col }));
-                    const combined = [...temp.bipados, ...temp.devolvidos, ...temp.faltas, ...temp.perdidos];
-                    combined.sort((a,b) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0));
-                    renderAdminPackages(combined);
-                }, (error) => {
-                    console.error("Erro Admin Package Listener:", error);
-                    showToast("Erro de permissão ao ler pacotes deste usuário.", "bg-red-600");
+                    adminPackageData = [...temp.bipados, ...temp.devolvidos, ...temp.faltas, ...temp.perdidos];
+                    adminPackageData.sort((a,b) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0));
+                    renderAdminPackages();
                 });
                 currentPackageListeners.push(unsub);
             });
         }
 
-        function renderAdminPackages(packages) {
+        window.renderAdminPackages = () => {
+            const searchVal = document.getElementById('adminPkgSearch').value.toLowerCase();
+            const statusFilter = document.getElementById('adminStatusFilter').value;
             const list = document.getElementById('adminPackageTable');
-            document.getElementById('adm-det-pending').innerText = packages.filter(p => p.colName === 'bipados').length;
-            document.getElementById('adm-det-ok').innerText = packages.filter(p => p.colName === 'devolvidos').length;
-            document.getElementById('adm-det-missing').innerText = packages.filter(p => p.colName === 'faltas').length;
-            document.getElementById('adm-det-lost').innerText = packages.filter(p => p.colName === 'perdidos').length;
+            
+            const filtered = adminPackageData.filter(p => {
+                const matchesSearch = p.id.toLowerCase().includes(searchVal);
+                const matchesStatus = statusFilter === 'all' || p.colName === statusFilter;
+                return matchesSearch && matchesStatus;
+            });
 
-            if (packages.length === 0) { list.innerHTML = `<p class="p-10 text-center text-gray-500 italic text-xs">Sem registros de pacotes.</p>`; return; }
+            document.getElementById('adm-det-pending').innerText = adminPackageData.filter(p => p.colName === 'bipados').length;
+            document.getElementById('adm-det-ok').innerText = adminPackageData.filter(p => p.colName === 'devolvidos').length;
+            document.getElementById('adm-det-missing').innerText = adminPackageData.filter(p => p.colName === 'faltas').length;
+            document.getElementById('adm-det-lost').innerText = adminPackageData.filter(p => p.colName === 'perdidos').length;
 
-            list.innerHTML = packages.map(p => {
+            if (filtered.length === 0) { list.innerHTML = `<p class="p-10 text-center text-gray-500 italic text-xs">Nenhum pacote encontrado com esses filtros.</p>`; return; }
+
+            list.innerHTML = filtered.map(p => {
                 const time = p.timestamp ? p.timestamp.toDate().toLocaleString('pt-BR') : '...';
                 let sCol = "text-blue-500 bg-blue-500/10";
                 if(p.colName === 'devolvidos') sCol = "text-green-500 bg-green-500/10";
@@ -327,25 +315,35 @@
                 if(p.colName === 'perdidos') sCol = "text-gray-500 bg-gray-500/20";
 
                 return `
-                    <div class="p-3 flex items-center justify-between hover:bg-white/5 transition-colors">
+                    <div class="p-4 flex items-center justify-between hover:bg-white/5 transition-colors border-b dark:border-zinc-800">
                         <div>
-                            <div class="flex items-center gap-2"><span class="font-mono font-bold text-xs">${p.id}</span>
-                            <span class="px-1.5 py-0.5 rounded text-[8px] font-bold uppercase ${sCol}">${p.status}</span></div>
-                            <p class="text-[9px] text-gray-500 mt-0.5">${time}</p>
+                            <div class="flex items-center gap-3">
+                                <span class="font-mono font-bold text-sm text-gray-700 dark:text-gray-200">${p.id}</span>
+                                <span class="px-2 py-0.5 rounded text-[8px] font-bold uppercase ${sCol}">${p.status}</span>
+                            </div>
+                            <p class="text-[10px] text-gray-400 mt-1 uppercase tracking-tighter">Registrado em: ${time}</p>
                         </div>
                         <div class="flex gap-2">
-                             <select onchange="window.adminChangeStatus('${selectedAdminUserId}', '${p.colName}', '${p.fid}', this.value)" class="bg-gray-100 dark:bg-zinc-800 text-[9px] p-1 rounded outline-none font-bold cursor-pointer">
-                                <option value="" disabled selected>Mudar</option>
-                                <option value="Em rota">Em rota</option>
-                                <option value="Devolvido">Devolvido</option>
-                                <option value="Falta">Falta</option>
-                                <option value="Perdido">Perdido</option>
+                             <select onchange="window.adminChangeStatus('${selectedAdminUserId}', '${p.colName}', '${p.fid}', this.value)" class="bg-gray-100 dark:bg-zinc-800 text-[10px] p-2 rounded-lg outline-none font-bold cursor-pointer border dark:border-zinc-700">
+                                <option value="" disabled selected>Alterar Status</option>
+                                <option value="Em rota">Mover para Rota</option>
+                                <option value="Devolvido">Marcar como OK</option>
+                                <option value="Falta">Marcar como Falta</option>
+                                <option value="Perdido">Marcar como Perdido</option>
                              </select>
+                             <button onclick="window.adminDeletePkg('${selectedAdminUserId}', '${p.colName}', '${p.fid}')" class="text-red-500 p-2 hover:bg-red-500/10 rounded-lg"><i class="fas fa-trash-can"></i></button>
                         </div>
                     </div>
                 `;
             }).join('');
         }
+
+        window.adminDeletePkg = async (uid, col, fid) => {
+            if(confirm("Excluir este pacote permanentemente?")) {
+                await deleteDoc(doc(db, 'artifacts', appId, 'users', uid, col, fid));
+                showToast("Pacote Excluído", "bg-red-600");
+            }
+        };
 
         window.adminChangeStatus = async (uid, oldCol, fid, newStatus) => {
             const colMap = { 'Em rota': 'bipados', 'Devolvido': 'devolvidos', 'Falta': 'faltas', 'Perdido': 'perdidos' };
@@ -356,41 +354,14 @@
                 const snap = await getDoc(docRef);
                 await setDoc(doc(db, 'artifacts', appId, 'users', uid, newCol, fid), { ...snap.data(), status: newStatus, timestamp: serverTimestamp() });
                 await deleteDoc(docRef);
-                showToast("Status Modificado", "bg-blue-600");
+                showToast("Status Alterado", "bg-blue-600");
             } catch (e) { showToast("Erro ao alterar", "bg-red-600"); }
         };
 
-        // Navegação e Views
-        function showApp() {
-            document.getElementById('view-auth').classList.add('hidden');
-            document.getElementById('main-navbar').classList.remove('hidden');
-            switchView('zap');
-        }
-
-        function showLogin() {
-            document.getElementById('view-auth').classList.remove('hidden');
-            document.getElementById('main-navbar').classList.add('hidden');
-            document.getElementById('view-zap').classList.add('hidden');
-            document.getElementById('view-scan').classList.add('hidden');
-            document.getElementById('view-admin').classList.add('hidden');
-        }
-
-        window.toggleAuthMode = (isRegister) => {
-            const nameField = document.getElementById('nameField');
-            const loginBtn = document.getElementById('loginBtn');
-            const registerBtn = document.getElementById('registerBtn');
-            const toggleText = document.getElementById('toggleText');
-            if (isRegister) {
-                nameField.classList.remove('hidden'); loginBtn.classList.add('hidden'); registerBtn.classList.remove('hidden');
-                toggleText.innerHTML = 'Já tem conta? <a href="#" onclick="toggleAuthMode(false)" class="text-blue-500 font-bold">Faça login</a>';
-            } else {
-                nameField.classList.add('hidden'); loginBtn.classList.remove('hidden'); registerBtn.classList.add('hidden');
-                toggleText.innerHTML = 'Não tem conta? <a href="#" onclick="toggleAuthMode(true)" class="text-blue-500 font-bold">Crie uma agora</a>';
-            }
-        };
+        window.filterAdminUsers = (val) => renderAdminUserList(val);
 
         window.openAdminGate = () => {
-            const pw = prompt("Acesso restrito. Digite a senha administrativa:");
+            const pw = prompt("ÁREA RESTRITA. Digite a senha administrativa:");
             if (pw === "ilario2025") {
                 switchView('admin');
                 if (currentUser && currentUser.email === 'admin@admin.com') {
@@ -400,8 +371,6 @@
                 showToast("Senha incorreta", "bg-red-600", "fa-lock");
             }
         };
-
-        window.filterAdminUsers = (val) => renderAdminUserList(val);
     </script>
 
     <style>
@@ -413,14 +382,12 @@
         .row-missing { background-color: rgba(239, 68, 68, 0.1) !important; border-left: 4px solid #ef4444 !important; }
         .row-route { background-color: rgba(59, 130, 246, 0.05) !important; border-left: 4px solid #3b82f6 !important; }
         .row-lost { background-color: rgba(15, 15, 15, 0.4) !important; border-left: 4px solid #000 !important; opacity: 0.7; }
-        @keyframes modalIn { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
-        .modal-animate { animation: modalIn 0.2s ease-out forwards; }
         
         #toast-container { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); z-index: 9999; display: flex; flex-direction: column; align-items: center; gap: 10px; pointer-events: none; width: 100%; max-width: 350px; }
         .toast-item { pointer-events: auto; padding: 12px 24px; border-radius: 9999px; box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3); color: white; font-size: 14px; font-weight: 700; display: flex; align-items: center; gap: 8px; transition: all 0.4s; opacity: 0; transform: translateY(-20px); }
         .toast-item.show { opacity: 1; transform: translateY(0); }
         
-        .custom-scrollbar::-webkit-scrollbar { width: 3px; }
+        .custom-scrollbar::-webkit-scrollbar { width: 4px; height: 4px; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #3b82f6; border-radius: 10px; }
     </style>
 </head>
@@ -431,7 +398,7 @@
     <!-- Navbar -->
     <div id="main-navbar" class="fixed top-0 left-0 right-0 h-16 z-40 pointer-events-none hidden">
         <button onclick="toggleMenu()" class="absolute top-4 left-4 w-10 h-10 rounded-full bg-white dark:bg-zinc-800 shadow-lg flex items-center justify-center text-gray-600 dark:text-gray-200 pointer-events-auto ring-1 ring-gray-200 dark:ring-gray-600 transition-transform active:scale-90"><i class="fas fa-bars"></i></button>
-        <button onclick="toggleTheme()" class="absolute top-4 right-4 w-10 h-10 rounded-full bg-white dark:bg-zinc-800 shadow-lg flex items-center justify-center text-gray-600 dark:text-gray-200 pointer-events-auto ring-1 ring-gray-200 dark:ring-gray-600"><i id="themeIcon" class="fas fa-sun"></i></button>
+        <button onclick="toggleTheme()" class="absolute top-4 right-4 w-10 h-10 rounded-full bg-white dark:bg-zinc-800 shadow-lg flex items-center justify-center text-gray-600 dark:text-gray-200 pointer-events-auto ring-1 ring-gray-200 dark:ring-gray-600 transition-transform active:scale-90"><i id="themeIcon" class="fas fa-sun"></i></button>
     </div>
 
     <!-- Sidebar -->
@@ -553,58 +520,98 @@
         </div>
     </main>
 
-    <!-- VIEW: ADMIN INTEGRADO -->
-    <main id="view-admin" class="w-full max-w-4xl mx-auto p-4 pt-24 hidden pb-20">
-        <header class="flex flex-col gap-2 mb-6 text-center">
-            <h1 class="text-2xl font-bold"><i class="fas fa-shield-halved text-blue-500"></i> Painel Administrativo</h1>
-            <p class="text-xs text-gray-500 uppercase font-bold tracking-widest">Controle Central de Entregadores</p>
-        </header>
-
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <!-- Sidebar Usuários -->
-            <div class="md:col-span-1 bg-white dark:bg-zinc-900 rounded-2xl border dark:border-zinc-700 overflow-hidden flex flex-col h-[500px]">
-                <div class="p-3 border-b dark:border-zinc-800">
-                    <input type="text" oninput="window.filterAdminUsers(this.value)" placeholder="Buscar entregador..." class="w-full p-2 text-xs bg-gray-100 dark:bg-zinc-800 rounded-lg outline-none border border-transparent focus:border-blue-500">
+    <!-- VIEW: ADMIN INTEGRADO (Otimizado para Desktop) -->
+    <main id="view-admin" class="w-full max-w-[1200px] mx-auto p-4 pt-20 hidden min-h-screen">
+        <div class="flex flex-col lg:flex-row gap-6 h-[calc(100vh-100px)]">
+            
+            <!-- Coluna 1: Lista de Usuários -->
+            <div class="w-full lg:w-1/3 flex flex-col bg-white dark:bg-zinc-900 rounded-3xl border dark:border-zinc-800 shadow-xl overflow-hidden">
+                <div class="p-5 border-b dark:border-zinc-800 bg-gray-50 dark:bg-zinc-800/30">
+                    <h2 class="text-sm font-bold uppercase tracking-widest text-blue-600 mb-4"><i class="fas fa-users"></i> Entregadores</h2>
+                    <div class="relative">
+                        <input type="text" oninput="window.filterAdminUsers(this.value)" placeholder="Pesquisar por nome..." class="w-full p-3 pl-10 text-sm bg-white dark:bg-zinc-900 border dark:border-zinc-700 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 shadow-sm">
+                        <i class="fas fa-search absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 text-xs"></i>
+                    </div>
                 </div>
-                <div id="adminUserList" class="flex-1 overflow-y-auto custom-scrollbar">
+                <div id="adminUserList" class="flex-1 overflow-y-auto custom-scrollbar p-2 space-y-1">
                     <p class="p-4 text-center text-gray-500 text-xs italic">Aguardando usuários...</p>
                 </div>
             </div>
 
-            <!-- Detalhes e Monitor -->
-            <div class="md:col-span-2 space-y-4">
-                <div id="admin-user-detail" class="hidden">
-                    <div class="bg-white dark:bg-zinc-900 p-5 rounded-2xl border dark:border-zinc-700 shadow-sm">
-                        <div class="flex justify-between items-start mb-4">
-                            <div>
-                                <h2 id="admin-selected-name" class="text-xl font-bold">...</h2>
-                                <p id="admin-selected-email" class="text-[10px] text-gray-500 font-bold uppercase tracking-tighter">...</p>
+            <!-- Coluna 2: Detalhes e Monitor de Pacotes -->
+            <div class="w-full lg:w-2/3 flex flex-col gap-4 overflow-hidden">
+                
+                <div id="admin-user-detail" class="hidden flex flex-col h-full">
+                    
+                    <!-- Header do Usuário Selecionado -->
+                    <div class="bg-white dark:bg-zinc-900 p-6 rounded-3xl border dark:border-zinc-800 shadow-xl mb-4">
+                        <div class="flex flex-col sm:flex-row justify-between items-center gap-4">
+                            <div class="text-center sm:text-left">
+                                <h2 id="admin-selected-name" class="text-2xl font-bold text-gray-800 dark:text-white leading-tight">Nome do Entregador</h2>
+                                <p id="admin-selected-email" class="text-xs text-gray-500 font-medium tracking-wide">email@exemplo.com</p>
                             </div>
-                            <button id="admin-block-btn" class="px-3 py-1 bg-yellow-600 text-white rounded-lg text-[10px] font-bold shadow-md uppercase transition-transform active:scale-95">Bloquear</button>
+                            <div class="flex gap-2 shrink-0">
+                                <button id="admin-block-btn" class="px-5 py-2.5 rounded-xl text-xs font-bold shadow-lg transition-transform active:scale-95 flex items-center gap-2">
+                                    <i class="fas fa-user-lock"></i> <span>Bloquear</span>
+                                </button>
+                            </div>
                         </div>
                         
-                        <div class="grid grid-cols-4 gap-2 text-center mb-4">
-                            <div class="bg-blue-500/10 p-2 rounded-xl"><span class="text-[7px] font-bold text-blue-500 uppercase">Rota</span><p id="adm-det-pending" class="text-sm font-black text-blue-600">0</p></div>
-                            <div class="bg-green-500/10 p-2 rounded-xl"><span class="text-[7px] font-bold text-green-500 uppercase">OK</span><p id="adm-det-ok" class="text-sm font-black text-green-600">0</p></div>
-                            <div class="bg-red-500/10 p-2 rounded-xl"><span class="text-[7px] font-bold text-red-500 uppercase">Falta</span><p id="adm-det-missing" class="text-sm font-black text-red-600">0</p></div>
-                            <div class="bg-zinc-500/10 p-2 rounded-xl"><span class="text-[7px] font-bold text-gray-500 uppercase">Perdido</span><p id="adm-det-lost" class="text-sm font-black text-gray-400">0</p></div>
+                        <div class="grid grid-cols-4 gap-3 mt-6">
+                            <div class="bg-blue-600/10 p-3 rounded-2xl border border-blue-600/20 text-center">
+                                <span class="text-[9px] font-black text-blue-600 uppercase">Rota</span>
+                                <p id="adm-det-pending" class="text-xl font-black text-blue-600">0</p>
+                            </div>
+                            <div class="bg-green-600/10 p-3 rounded-2xl border border-green-600/20 text-center">
+                                <span class="text-[9px] font-black text-green-600 uppercase">OK</span>
+                                <p id="adm-det-ok" class="text-xl font-black text-green-600">0</p>
+                            </div>
+                            <div class="bg-red-600/10 p-3 rounded-2xl border border-red-600/20 text-center">
+                                <span class="text-[9px] font-black text-red-600 uppercase">Falta</span>
+                                <p id="adm-det-missing" class="text-xl font-black text-red-600">0</p>
+                            </div>
+                            <div class="bg-zinc-600/10 p-3 rounded-2xl border border-zinc-600/20 text-center">
+                                <span class="text-[9px] font-black text-gray-500 uppercase">Perdido</span>
+                                <p id="adm-det-lost" class="text-xl font-black text-gray-500">0</p>
+                            </div>
                         </div>
+                    </div>
 
-                        <div id="adminPackageTable" class="divide-y dark:divide-zinc-800 max-h-[300px] overflow-y-auto custom-scrollbar border dark:border-zinc-800 rounded-xl">
-                            <p class="p-8 text-center text-gray-500 text-xs italic">Carregando pacotes...</p>
+                    <!-- Tabela de Pacotes com Filtros -->
+                    <div class="flex-1 bg-white dark:bg-zinc-900 rounded-3xl border dark:border-zinc-800 shadow-xl overflow-hidden flex flex-col">
+                        <div class="p-4 border-b dark:border-zinc-800 bg-gray-50 dark:bg-zinc-800/30 flex flex-col sm:flex-row gap-3 items-center justify-between">
+                            <div class="relative flex-1 w-full">
+                                <input type="text" id="adminPkgSearch" oninput="window.renderAdminPackages()" placeholder="Localizar código..." class="w-full p-2.5 pl-9 text-xs bg-white dark:bg-zinc-900 border dark:border-zinc-700 rounded-xl outline-none focus:ring-2 focus:ring-blue-500">
+                                <i class="fas fa-barcode absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs"></i>
+                            </div>
+                            <select id="adminStatusFilter" onchange="window.renderAdminPackages()" class="w-full sm:w-auto p-2.5 text-xs bg-white dark:bg-zinc-900 border dark:border-zinc-700 rounded-xl font-bold outline-none cursor-pointer">
+                                <option value="all">Todos os Status</option>
+                                <option value="bipados">Em Rota</option>
+                                <option value="devolvidos">OK (Devolvido)</option>
+                                <option value="faltas">Falta</option>
+                                <option value="perdidos">Perdido</option>
+                            </select>
+                        </div>
+                        <div id="adminPackageTable" class="flex-1 overflow-y-auto custom-scrollbar divide-y dark:divide-zinc-800">
+                            <p class="p-12 text-center text-gray-500 text-xs italic">Selecione um entregador ao lado para auditar.</p>
                         </div>
                     </div>
                 </div>
 
-                <div id="admin-empty-state" class="flex flex-col items-center justify-center h-[500px] bg-white/50 dark:bg-white/5 rounded-2xl border border-dashed dark:border-zinc-800 opacity-50">
-                    <i class="fas fa-user-gear text-5xl mb-4"></i>
-                    <p class="text-sm font-bold">Selecione um entregador para monitorar</p>
+                <!-- Estado Vazio -->
+                <div id="admin-empty-state" class="flex flex-col items-center justify-center h-full bg-white dark:bg-zinc-900 rounded-[40px] border-4 border-dashed border-gray-100 dark:border-zinc-800 opacity-40 text-center p-10 transition-all">
+                    <div class="w-24 h-24 rounded-full bg-blue-600/10 flex items-center justify-center mb-6 text-blue-600">
+                        <i class="fas fa-users-gear text-5xl"></i>
+                    </div>
+                    <h2 class="text-xl font-bold mb-2">Monitoramento Administrativo</h2>
+                    <p class="text-sm font-medium max-w-xs">Selecione um entregador na lista lateral para monitorar pacotes e status em tempo real.</p>
                 </div>
+
             </div>
         </div>
     </main>
 
-    <!-- Modal Histórico ZAP -->
+    <!-- Modais e Toast (Mantidos conforme última versão estável) -->
     <div id="historyModal" class="fixed inset-0 z-50 hidden flex items-center justify-center px-4">
         <div class="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity" onclick="closeHistoryModal()"></div>
         <div class="relative w-full max-w-sm bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl p-6 modal-animate flex flex-col max-h-[80vh] border dark:border-zinc-700">
@@ -621,6 +628,7 @@
     </div>
 
     <script>
+        // Scripts de utilidades e lógica de bipagem (mantidos conforme sua solicitação)
         let allPackages = [];
         let isConferenceMode = false;
         let codeReader = null;
@@ -646,10 +654,6 @@
             document.getElementById('view-admin').classList.add('hidden');
             document.getElementById('view-' + v).classList.remove('hidden');
             stopCamera();
-            if (v === 'admin') {
-                document.getElementById('admin-empty-state').classList.remove('hidden');
-                document.getElementById('admin-user-detail').classList.add('hidden');
-            }
         }
 
         function startNewBatch(mode) {
@@ -709,7 +713,7 @@
         function updateScanUI() {
             const list = document.getElementById('packageList');
             if(allPackages.length === 0) {
-                list.innerHTML = `<p class="p-12 text-center text-gray-400 italic text-sm">Nenhum registro.</p>`;
+                list.innerHTML = `<p class="p-12 text-center text-slate-400 italic text-sm">Nenhum registro.</p>`;
             } else {
                 list.innerHTML = allPackages.map(p => {
                     let statusClass = "bg-blue-100 text-blue-700"; let rowClass = "row-route";
@@ -719,7 +723,7 @@
                     return `<div class="p-4 flex justify-between items-center transition-all ${rowClass}">
                         <div><div class="flex items-center gap-2"><span class="font-mono font-bold text-sm text-gray-700 dark:text-gray-200">${p.id}</span>
                         <span class="text-[8px] font-bold px-1.5 py-0.5 rounded ${statusClass}">${p.status.toUpperCase()}</span></div>
-                        <p class="text-[9px] text-slate-400 mt-0.5 uppercase tracking-tighter">Por: ${p.user} • ${p.time}</p></div>
+                        <p class="text-[9px] text-slate-400 mt-0.5 uppercase tracking-tighter">Responsável: ${p.user} • ${p.time}</p></div>
                     </div>`;
                 }).join('');
             }
@@ -729,7 +733,6 @@
             document.getElementById('statLost').innerText = allPackages.filter(p => p.collection === 'perdidos').length;
         }
 
-        // --- ZAP LOGIC ---
         const phoneInput = document.getElementById('phoneInput');
         phoneInput.addEventListener('input', function (e) {
             let v = e.target.value.replace(/\D/g, ''); 
@@ -791,7 +794,7 @@
             doc.save(`entregas_${t}.pdf`);
         }
 
-        function initAudio() { if(!audioCtx) audioCtx = new (winadow.AudioContext || window.webkitAudioContext)(); if(audioCtx.state === 'suspended') audioCtx.resume(); }
+        function initAudio() { if(!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)(); if(audioCtx.state === 'suspended') audioCtx.resume(); }
         function playBeep(s) {
             if(!audioCtx) return; const o = audioCtx.createOscillator(); const g = audioCtx.createGain();
             o.type = s ? 'square' : 'sawtooth'; o.frequency.setValueAtTime(s ? 2000 : 180, audioCtx.currentTime);
