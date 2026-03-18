@@ -106,10 +106,13 @@
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
         body { font-family: 'Inter', sans-serif; -webkit-tap-highlight-color: transparent; }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
         .btn-pulse:active { transform: scale(0.95); }
         .row-done { background-color: rgba(34, 197, 94, 0.1) !important; border-left: 4px solid #22c55e !important; }
         .row-missing { background-color: rgba(239, 68, 68, 0.1) !important; border-left: 4px solid #ef4444 !important; }
         .row-route { background-color: rgba(59, 130, 246, 0.05) !important; border-left: 4px solid #3b82f6 !important; }
+        @keyframes modalIn { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
+        .modal-animate { animation: modalIn 0.2s ease-out forwards; }
     </style>
 </head>
 <body class="bg-gray-100 dark:bg-black text-gray-800 dark:text-gray-100 min-h-screen flex flex-col transition-colors duration-300">
@@ -129,28 +132,64 @@
         </div>
         <nav class="p-4 flex flex-col gap-2">
             <a href="#" onclick="switchView('zap'); toggleMenu();" class="flex items-center gap-3 p-3 rounded-xl hover:bg-gray-100 dark:hover:bg-zinc-800 transition-colors">
-                <i class="fab fa-whatsapp text-green-500"></i> Zap Entregas
+                <div class="w-8 h-8 rounded-lg bg-green-100 dark:bg-green-900/30 flex items-center justify-center text-green-600"><i class="fab fa-whatsapp"></i></div> Zap Entregas
             </a>
             <a href="#" onclick="switchView('scan'); toggleMenu();" class="flex items-center gap-3 p-3 rounded-xl hover:bg-gray-100 dark:hover:bg-zinc-800 transition-colors">
-                <i class="fas fa-barcode text-blue-500"></i> Gestão de Lotes
+                <div class="w-8 h-8 rounded-lg bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-600"><i class="fas fa-barcode"></i></div> Gestão de Lotes
             </a>
         </nav>
     </div>
 
-    <!-- VIEW: ZAP SEM ADD (Simplificada) -->
-    <main id="view-zap" class="w-full max-w-md mx-auto p-6 pt-20 flex flex-col justify-center min-h-screen">
+    <!-- VIEW: ZAP SEM ADD (Completa) -->
+    <main id="view-zap" class="w-full max-w-md mx-auto p-6 pt-20 animate-fade-in relative z-10 flex flex-col justify-center min-h-screen pb-10">
+        <!-- Cabeçalho -->
         <div class="text-center mb-8">
-            <div class="w-20 h-20 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center mx-auto mb-4">
-                <i class="fab fa-whatsapp text-5xl text-green-600"></i>
+            <div class="inline-flex items-center justify-center w-20 h-20 rounded-full bg-green-100 dark:bg-green-900/30 mb-4 ring-1 ring-green-500/30 shadow-lg">
+                <i class="fab fa-whatsapp text-5xl text-green-600 dark:text-green-400"></i>
             </div>
-            <h1 class="text-2xl font-bold">Zap Rápido</h1>
+            <h1 class="text-2xl font-bold text-gray-800 dark:text-white tracking-tight">Zap Entregas</h1>
+            <p class="text-gray-500 dark:text-gray-400 text-sm mt-1">Contato rápido por Parada</p>
         </div>
-        <div class="bg-white dark:bg-zinc-900 p-6 rounded-2xl shadow-xl border border-gray-200 dark:border-zinc-700">
-            <div class="flex gap-2 mb-4">
-                <input type="number" id="stopInput" class="w-20 bg-gray-100 dark:bg-zinc-800 p-4 rounded-xl text-center font-bold" placeholder="P">
-                <input type="tel" id="phoneInput" class="flex-1 bg-gray-100 dark:bg-zinc-800 p-4 rounded-xl text-center font-mono" placeholder="Celular">
+
+        <!-- Formulário -->
+        <div class="bg-white dark:bg-zinc-900 p-6 rounded-2xl border border-gray-200 dark:border-zinc-700 shadow-xl">
+            <div class="flex justify-between ml-1 mb-2">
+                <label class="text-xs font-bold text-gray-500 dark:text-gray-300 uppercase tracking-wider">Parada</label>
+                <label class="text-xs font-bold text-gray-500 dark:text-gray-300 uppercase tracking-wider mr-4">Telefone</label>
             </div>
-            <button onclick="openWhatsapp()" class="w-full bg-green-600 text-white py-4 rounded-xl font-bold btn-pulse">Enviar Mensagem</button>
+            
+            <div class="flex gap-3 mb-2">
+                <div class="w-24">
+                    <input type="number" id="stopInput" class="w-full bg-gray-100 dark:bg-zinc-800 text-center text-gray-900 dark:text-white py-4 rounded-xl border border-transparent dark:border-zinc-700 focus:bg-white dark:focus:bg-zinc-700 focus:border-green-500 outline-none font-bold text-lg" placeholder="00" min="0" max="999" oninput="if(this.value.length > 3) this.value = this.value.slice(0,3);">
+                </div>
+                <div class="flex-1 relative">
+                    <input type="tel" id="phoneInput" class="w-full bg-gray-100 dark:bg-zinc-800 text-gray-900 dark:text-white px-4 py-4 rounded-xl border border-transparent dark:border-zinc-700 focus:bg-white dark:focus:bg-zinc-700 focus:border-green-500 outline-none font-mono text-center text-lg" placeholder="(11) 99999-9999" maxlength="15">
+                </div>
+            </div>
+
+            <!-- Botões de Ação Rápida -->
+            <div class="flex justify-between items-center px-1 mb-6">
+                <button onclick="pasteFromClipboard()" class="text-xs text-gray-500 dark:text-gray-400 hover:text-green-600 transition-colors flex items-center gap-2 py-1 px-2 rounded hover:bg-gray-100 dark:hover:bg-zinc-800 font-medium">
+                    <i class="far fa-clipboard"></i> Colar
+                </button>
+                <button onclick="clearInputs()" class="text-xs text-gray-500 dark:text-gray-400 hover:text-red-500 transition-colors flex items-center gap-2 py-1 px-2 rounded hover:bg-gray-100 dark:hover:bg-zinc-800 font-medium">
+                    <i class="fas fa-trash-alt"></i> Apagar Tudo
+                </button>
+            </div>
+
+            <!-- Input de Mensagem -->
+            <label class="block text-xs font-bold text-gray-500 dark:text-gray-300 uppercase tracking-wider mb-2 ml-1">Mensagem</label>
+            <div class="relative mb-6">
+                <textarea id="messageInput" class="w-full bg-gray-100 dark:bg-zinc-800 text-gray-900 dark:text-white p-4 rounded-xl border border-transparent dark:border-zinc-700 focus:bg-white dark:focus:bg-zinc-700 focus:border-green-500 outline-none h-24 text-sm resize-none">Olá. Entrega do Mercado Livre.</textarea>
+            </div>
+
+            <button onclick="openWhatsapp()" class="w-full bg-green-600 hover:bg-green-500 text-white font-bold py-4 rounded-xl shadow-lg transition-all btn-pulse flex items-center justify-center gap-2 mb-4">
+                <span>Iniciar Conversa</span> <i class="fas fa-arrow-right"></i>
+            </button>
+
+            <button onclick="openHistoryModal()" class="w-full bg-gray-200 dark:bg-zinc-800 hover:bg-gray-300 dark:hover:bg-zinc-700 text-gray-600 dark:text-gray-200 font-semibold py-3 rounded-xl transition-all flex items-center justify-center gap-2 text-sm uppercase tracking-wider">
+                <i class="fas fa-history"></i> Histórico do dia
+            </button>
         </div>
     </main>
 
@@ -228,6 +267,30 @@
         </div>
     </main>
 
+    <!-- Modal de Histórico (ZAP) -->
+    <div id="historyModal" class="fixed inset-0 z-50 hidden flex items-center justify-center px-4">
+        <div class="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity" onclick="closeHistoryModal()"></div>
+        <div class="relative w-full max-w-sm bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl p-6 modal-animate flex flex-col max-h-[80vh] border border-transparent dark:border-zinc-700">
+            <div class="flex justify-between items-center mb-4 border-b border-gray-200 dark:border-zinc-700 pb-4">
+                <h3 class="text-lg font-bold text-gray-800 dark:text-white flex items-center gap-2">
+                    <i class="fas fa-calendar-day text-green-500"></i> Histórico de Hoje
+                </h3>
+                <button onclick="closeHistoryModal()" class="text-gray-400 hover:text-red-500 transition-colors">
+                    <i class="fas fa-times text-xl"></i>
+                </button>
+            </div>
+            <div id="modalHistoryList" class="flex-1 overflow-y-auto space-y-2 min-h-[100px] no-scrollbar"></div>
+            <div class="mt-4 pt-3 border-t border-gray-200 dark:border-zinc-700 flex justify-between items-center px-1">
+                 <button onclick="clearDailyHistory()" class="flex items-center gap-2 text-xs text-red-500 font-bold uppercase transition-colors px-2 py-2 rounded hover:bg-red-50 dark:hover:bg-red-900/20">
+                    <i class="fas fa-trash-alt"></i> Limpar
+                </button>
+                <button onclick="saveHistoryPDF()" class="flex items-center gap-2 text-xs text-blue-600 dark:text-blue-400 font-bold uppercase transition-colors px-3 py-2 rounded bg-blue-50 dark:bg-blue-900/20">
+                    <i class="fas fa-file-pdf"></i> PDF
+                </button>
+            </div>
+        </div>
+    </div>
+
     <div id="toast" class="fixed top-5 left-1/2 -translate-x-1/2 px-6 py-3 rounded-full shadow-2xl transition-all duration-300 opacity-0 z-[100] flex items-center gap-2 text-sm font-bold text-white pointer-events-none">
         <i id="toastIcon"></i> <span id="toastMsg"></span>
     </div>
@@ -265,7 +328,7 @@
             stopCamera();
         }
 
-        // Logic
+        // Logic Gestão de Lotes
         function startNewBatch(mode) {
             const name = document.getElementById('newUserName').value.trim();
             if(!name) return showToast("Digite seu nome", "bg-red-500", "fa-user");
@@ -290,7 +353,6 @@
             initAudio();
             
             if(isConferenceMode) {
-                // MODO DEVOLVER
                 const pkg = allPackages.find(p => p.id === code);
                 if(pkg) {
                     if(pkg.status === 'Devolvido') {
@@ -306,20 +368,17 @@
                     playBeep(false);
                 }
             } else {
-                // MODO ADICIONAR
                 const pkg = allPackages.find(p => p.id === code);
                 if(pkg) {
                     if(pkg.status === 'Em rota') {
                         showToast("Já está em rota!", "bg-yellow-500", "fa-info-circle");
                         playBeep(false);
                     } else {
-                        // RE-ADIÇÃO (Se era Devolvido ou Falta, volta pra rota)
                         await window.updateStatusFirebase(code, 'Em rota');
                         showToast("Re-adicionado à rota", "bg-blue-600", "fa-redo");
                         playBeep(true);
                     }
                 } else {
-                    // Novo Pacote
                     await window.saveToFirebase(code, currentBatchUser, 'Em rota');
                     showToast("Adicionado: " + code, "bg-blue-600", "fa-plus");
                     playBeep(true);
@@ -368,7 +427,123 @@
             document.getElementById('listCount').innerText = allPackages.length + " total";
         }
 
-        // Utils
+        // --- ZAP SEM ADD LOGIC ---
+        const phoneInput = document.getElementById('phoneInput');
+        const stopInput = document.getElementById('stopInput');
+        const messageInput = document.getElementById('messageInput');
+
+        phoneInput.addEventListener('input', function (e) {
+            let value = e.target.value.replace(/\D/g, ''); 
+            if (value.length > 11) value = value.slice(0, 11);
+            if (value.length > 10) value = value.replace(/^(\d\d)(\d{5})(\d{4}).*/, "($1) $2-$3");
+            else if (value.length > 6) value = value.replace(/^(\d\d)(\d{4})(\d{0,4}).*/, "($1) $2-$3");
+            else if (value.length > 2) value = value.replace(/^(\d\d)(\d{0,5}).*/, "($1) $2");
+            else if (value.length > 0) value = value.replace(/^(\d*)/, "($1");
+            e.target.value = value;
+        });
+
+        function clearInputs() {
+            phoneInput.value = "";
+            stopInput.value = "";
+            stopInput.focus();
+        }
+
+        async function pasteFromClipboard() {
+            try {
+                const text = await navigator.clipboard.readText();
+                const cleanText = text.replace(/\D/g, '');
+                if (cleanText.length >= 10) {
+                    let numberToInput = cleanText;
+                    if (cleanText.length >= 12 && cleanText.startsWith('55')) numberToInput = cleanText.substring(2);
+                    phoneInput.value = numberToInput;
+                    phoneInput.dispatchEvent(new Event('input'));
+                } else {
+                    showToast("Área de transferência inválida.", "bg-yellow-500", "fa-exclamation-circle");
+                }
+            } catch (err) { showToast("Permissão negada.", "bg-red-500", "fa-lock"); }
+        }
+
+        function openWhatsapp(phoneOverride = null, stopOverride = null) {
+            let rawNumber = phoneOverride || phoneInput.value.replace(/\D/g, '');
+            let stopNumber = stopOverride || stopInput.value;
+            let message = messageInput.value;
+
+            if (rawNumber.length < 10) {
+                showToast("Digite o telefone com DDD.", "bg-red-500", "fa-exclamation-triangle");
+                return;
+            }
+
+            const url = `https://api.whatsapp.com/send?phone=55${rawNumber}&text=${encodeURIComponent(message)}`;
+            if (!phoneOverride) saveToHistory(rawNumber, stopNumber);
+            window.open(url, '_blank');
+        }
+
+        function saveToHistory(number, stop) {
+            let history = JSON.parse(localStorage.getItem('wa_history_v2') || '[]');
+            const today = new Date().toLocaleDateString('pt-BR');
+            history = history.filter(item => !(item.phone === number && item.date === today));
+            history.unshift({ phone: number, stop: stop, date: today, timestamp: Date.now() });
+            localStorage.setItem('wa_history_v2', JSON.stringify(history));
+        }
+
+        function openHistoryModal() { 
+            document.getElementById('historyModal').classList.remove('hidden'); 
+            renderHistoryList(); 
+        }
+        function closeHistoryModal() { 
+            document.getElementById('historyModal').classList.add('hidden'); 
+        }
+
+        function renderHistoryList() {
+            const list = document.getElementById('modalHistoryList');
+            const history = JSON.parse(localStorage.getItem('wa_history_v2') || '[]');
+            const today = new Date().toLocaleDateString('pt-BR');
+            const todaysCalls = history.filter(item => item.date === today);
+
+            if (todaysCalls.length === 0) {
+                list.innerHTML = `<div class="text-center py-8 text-gray-400 text-sm italic">Nenhum histórico hoje.</div>`;
+                return;
+            }
+            list.innerHTML = todaysCalls.map(item => {
+                const phone = item.phone.replace(/^(\d{2})(\d{5})(\d{4})/, "($1) $2-$3");
+                return `
+                    <div class="flex items-center justify-between bg-gray-50 dark:bg-zinc-800 p-3 rounded-xl border dark:border-zinc-700">
+                        <div class="flex items-center gap-2">
+                            <span class="bg-gray-200 dark:bg-zinc-700 px-2 py-0.5 rounded text-[10px] font-bold">P:${item.stop || '-'}</span>
+                            <span class="font-mono text-sm">${phone}</span>
+                        </div>
+                        <button onclick="openWhatsapp('${item.phone}')" class="bg-green-500 text-white p-2 rounded-lg text-xs font-bold"><i class="fab fa-whatsapp"></i></button>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function clearDailyHistory() {
+            if(confirm("Limpar histórico de HOJE?")) {
+                const today = new Date().toLocaleDateString('pt-BR');
+                let history = JSON.parse(localStorage.getItem('wa_history_v2') || '[]');
+                localStorage.setItem('wa_history_v2', JSON.stringify(history.filter(item => item.date !== today)));
+                renderHistoryList();
+            }
+        }
+
+        function saveHistoryPDF() {
+            const history = JSON.parse(localStorage.getItem('wa_history_v2') || '[]');
+            const today = new Date().toLocaleDateString('pt-BR');
+            const data = history.filter(item => item.date === today).reverse();
+            if (data.length === 0) return;
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF();
+            doc.text(`Relatório de Contatos - ${today}`, 14, 20);
+            doc.autoTable({
+                head: [['Parada', 'Telefone', 'Horário']],
+                body: data.map(i => [i.stop || '-', i.phone, new Date(i.timestamp).toLocaleTimeString()]),
+                startY: 30
+            });
+            doc.save(`zap_contatos_${today}.pdf`);
+        }
+
+        // Utils Universais
         function initAudio() { 
             if(!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)(); 
             if(audioCtx.state === 'suspended') audioCtx.resume();
@@ -407,11 +582,6 @@
             codeReader.decodeFromConstraints({ video: { facingMode: "environment" } }, 'readerVideo', (res) => { if(res) processCode(res.getText()); });
         }
         function stopCamera() { if(codeReader) codeReader.reset(); isCameraActive = false; document.getElementById('cameraContainer').classList.add('hidden'); }
-        function openWhatsapp() {
-            const phone = document.getElementById('phoneInput').value.replace(/\D/g, '');
-            if(phone.length < 10) return showToast("Celular inválido", "bg-red-500", "fa-exclamation");
-            window.open(`https://api.whatsapp.com/send?phone=55${phone}`, '_blank');
-        }
     </script>
 </body>
 </html>
