@@ -49,9 +49,10 @@
         };
 
         function isValidEmail(email) {
-            if (email.toLowerCase() === 'admin@admin.com') return true;
-            const domain = email.split('@')[1];
-            return allowedDomains.includes(domain?.toLowerCase());
+            const emailLower = email.toLowerCase();
+            if (emailLower === 'admin@gmail.com') return true;
+            const domain = emailLower.split('@')[1];
+            return allowedDomains.includes(domain);
         }
 
         async function registerUserInDirectory(user) {
@@ -87,7 +88,7 @@
             let email = document.getElementById('authEmail').value.trim();
             const password = document.getElementById('authPassword').value;
             const name = document.getElementById('authName').value.trim();
-            if (email.toLowerCase() === "ilario") email = "admin@admin.com";
+            if (email.toLowerCase() === "ilario") email = "admin@gmail.com";
             if (!email || !password) return showToast("Preencha os campos", "bg-red-500", "fa-exclamation-circle");
             if (!isValidEmail(email)) return showToast("E-mail não permitido", "bg-red-500", "fa-envelope");
             try {
@@ -125,8 +126,7 @@
 
         async function processLostItems(userId) {
             const today = new Date(); today.setHours(0, 0, 0, 0);
-            const q = collection(db, 'artifacts', appId, 'users', userId, 'faltas');
-            const snap = await getDocs(q);
+            const snap = await getDocs(collection(db, 'artifacts', appId, 'users', userId, 'faltas'));
             const batch = writeBatch(db);
             let count = 0;
             snap.forEach(d => {
@@ -190,156 +190,15 @@
 
     <div id="menuOverlay" class="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 hidden opacity-0 transition-opacity duration-300" onclick="toggleMenu()"></div>
     <div id="sideMenu" class="fixed inset-y-0 left-0 w-64 bg-white dark:bg-zinc-900 shadow-2xl transform -translate-x-full transition-transform duration-300 ease-in-out z-50 flex flex-col border-r border-gray-200 dark:border-zinc-700">
-        <div class="p-6 border-b border-gray-100 dark:border-zinc-800 bg-gray-50 dark:bg-zinc-800/50">
-            <span class="text-[10px] font-bold text-blue-600 uppercase tracking-widest">Entregador</span>
-            <h2 class="user-display-name font-bold text-lg text-gray-800 dark:text-white truncate">Usuário</h2>
-        </div>
+        <div class="p-6 border-b border-gray-100 dark:border-zinc-800 bg-gray-50 dark:bg-zinc-800/50"><span class="text-[10px] font-bold text-blue-600 uppercase tracking-widest">Entregador</span><h2 class="user-display-name font-bold text-lg text-gray-800 dark:text-white truncate">Usuário</h2></div>
         <nav class="p-4 flex flex-col gap-2">
-            <a href="#" onclick="switchView('zap'); toggleMenu();" class="flex items-center gap-3 p-3 rounded-xl hover:bg-gray-100 dark:hover:bg-zinc-800 transition-colors"><i class="fab fa-whatsapp text-green-600"></i> Zap Entregas</a>
-            <a href="#" onclick="switchView('scan'); toggleMenu();" class="flex items-center gap-3 p-3 rounded-xl hover:bg-gray-100 dark:hover:bg-zinc-800 transition-colors"><i class="fas fa-barcode text-blue-600"></i> Gestão de Lotes</a>
-            <div class="mt-auto pt-4 border-t dark:border-zinc-800"><button onclick="logout()" class="flex items-center gap-3 p-3 w-full rounded-xl text-red-600 font-bold transition-colors"><i class="fas fa-sign-out-alt"></i> Sair da Conta</button></div>
+            <a href="#" onclick="switchView('zap'); toggleMenu();" class="flex items-center gap-3 p-3 rounded-xl hover:bg-gray-100 dark:hover:bg-zinc-800 transition-colors font-medium text-sm text-gray-700 dark:text-gray-200"><div class="w-8 h-8 rounded-lg bg-green-100 dark:bg-green-900/30 flex items-center justify-center text-green-600"><i class="fab fa-whatsapp"></i></div> Zap Entregas</a>
+            <a href="#" onclick="switchView('scan'); toggleMenu();" class="flex items-center gap-3 p-3 rounded-xl hover:bg-gray-100 dark:hover:bg-zinc-800 transition-colors font-medium text-sm text-gray-700 dark:text-gray-200"><div class="w-8 h-8 rounded-lg bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-600"><i class="fas fa-barcode"></i></div> Gestão de Lotes</a>
+            <div class="mt-auto pt-4 border-t dark:border-zinc-800"><button onclick="logout()" class="flex items-center gap-3 p-3 w-full rounded-xl text-red-600 font-bold transition-colors text-sm"><i class="fas fa-sign-out-alt"></i> Sair da Conta</button></div>
         </nav>
     </div>
 
     <main id="view-auth" class="flex-1 flex items-center justify-center p-6">
         <div class="w-full max-w-sm bg-white dark:bg-zinc-900 p-8 rounded-3xl shadow-2xl border dark:border-zinc-800 text-center">
-            <div class="w-20 h-20 rounded-3xl bg-blue-600 flex items-center justify-center mx-auto mb-4 shadow-xl"><i class="fas fa-truck-fast text-4xl text-white"></i></div>
-            <h1 class="text-2xl font-bold mb-1 leading-tight">Multiferramentas</h1>
-            <p class="text-sm text-gray-500 mb-8 font-medium">Logística em Nuvem</p>
-            <div class="space-y-4 text-left">
-                <div id="nameField" class="hidden"><label class="block text-[10px] font-bold text-gray-400 uppercase ml-1">Nome</label><input type="text" id="authName" class="w-full bg-gray-50 dark:bg-zinc-800 p-4 rounded-xl border dark:border-zinc-700 outline-none focus:ring-2 focus:ring-blue-500" placeholder="Seu nome"></div>
-                <div><label class="block text-[10px] font-bold text-gray-400 uppercase ml-1">E-mail</label><input type="email" id="authEmail" class="w-full bg-gray-50 dark:bg-zinc-800 p-4 rounded-xl border dark:border-zinc-700 outline-none focus:ring-2 focus:ring-blue-500" placeholder="exemplo@gmail.com"></div>
-                <div><label class="block text-[10px] font-bold text-gray-400 uppercase ml-1">Senha</label><input type="password" id="authPassword" class="w-full bg-gray-50 dark:bg-zinc-800 p-4 rounded-xl border dark:border-zinc-700 outline-none focus:ring-2 focus:ring-blue-500" placeholder="••••••••"></div>
-                <button id="loginBtn" onclick="handleAuth('login')" class="w-full bg-blue-600 text-white py-4 rounded-xl font-bold transition-all btn-pulse mt-2">Entrar</button>
-                <button id="registerBtn" onclick="handleAuth('register')" class="w-full bg-blue-600 text-white py-4 rounded-xl font-bold transition-all btn-pulse hidden">Criar Conta</button>
-                <p id="toggleText" class="text-center text-sm text-gray-500">Não tem conta? <a href="#" onclick="toggleAuthMode(true)" class="text-blue-500 font-bold">Crie agora</a></p>
-            </div>
-        </div>
-    </main>
-
-    <main id="view-zap" class="w-full max-w-md mx-auto p-4 pt-24 hidden flex-col justify-start min-h-screen">
-        <div class="bg-white dark:bg-zinc-900 p-5 rounded-2xl border dark:border-zinc-700 shadow-xl">
-            <div class="flex gap-3 mb-4">
-                <div class="w-20"><label class="block text-[10px] font-bold text-gray-400 uppercase ml-1">Parada</label><input type="number" id="stopInput" class="w-full bg-gray-100 dark:bg-zinc-800 text-center py-4 rounded-xl font-bold text-lg outline-none focus:ring-2 focus:ring-green-500" placeholder="00"></div>
-                <div class="flex-1"><label class="block text-[10px] font-bold text-gray-400 uppercase ml-1">Telefone</label><input type="tel" id="phoneInput" class="w-full bg-gray-100 dark:bg-zinc-800 py-4 rounded-xl font-mono text-center text-lg outline-none focus:ring-2 focus:ring-green-500" placeholder="(11) 99999-9999"></div>
-            </div>
-            <textarea id="messageInput" class="w-full bg-gray-100 dark:bg-zinc-800 p-4 rounded-xl h-20 mb-4 resize-none text-sm outline-none">Olá. Entrega do Mercado Livre.</textarea>
-            <button onclick="openWhatsapp()" class="w-full bg-green-600 text-white font-bold py-4 rounded-xl shadow-lg btn-pulse mb-3">Chamar no Zap</button>
-            <button onclick="openHistoryModal()" class="w-full bg-gray-200 dark:bg-zinc-800 py-3 rounded-xl text-sm font-bold text-gray-600 dark:text-gray-300">Histórico de Hoje</button>
-        </div>
-    </main>
-
-    <main id="view-scan" class="w-full max-w-2xl mx-auto p-4 pt-24 hidden pb-20">
-        <div id="userSection" class="bg-blue-600 rounded-2xl p-6 shadow-lg text-white mb-6 hidden">
-            <div class="flex justify-between items-center mb-4"><span class="font-bold text-sm">BIPAGEM ATIVA</span><button onclick="finalizeOperation()" class="bg-white/20 px-3 py-1.5 rounded-lg border border-white/30 text-xs font-bold">Finalizar</button></div>
-            <input type="text" id="barcodeInput" placeholder="Bipar código..." class="w-full p-4 bg-black/20 rounded-xl text-white outline-none placeholder-blue-100 font-mono mb-4">
-            <button onclick="toggleCamera()" id="camBtn" class="w-full py-4 bg-black/20 rounded-xl font-bold flex items-center justify-center gap-3 border border-white/10"><i class="fas fa-camera"></i> <span id="camBtnText">Scanner Câmera</span></button>
-        </div>
-        <div id="startSection" class="bg-white dark:bg-zinc-900 rounded-2xl p-8 border dark:border-zinc-700 text-center shadow-xl">
-            <h3 class="font-bold uppercase text-xs tracking-widest text-gray-500 mb-4">Operação de Lote</h3>
-            <div class="flex gap-3"><button onclick="startNewBatch('out')" class="flex-1 py-4 bg-blue-600 text-white rounded-2xl font-bold shadow-lg">Adicionar</button><button onclick="startNewBatch('return')" class="flex-1 py-4 bg-green-600 text-white rounded-2xl font-bold shadow-lg">Devolver</button></div>
-        </div>
-        <div id="cameraContainer" class="hidden mb-6 mx-auto w-full max-w-[300px] aspect-square bg-black rounded-2xl overflow-hidden relative border-4 border-blue-500/20 shadow-2xl">
-            <video id="readerVideo" class="w-full h-full object-cover scale-105" autoplay muted playsinline></video>
-            <div class="absolute inset-0 flex items-center justify-center pointer-events-none z-10"><div class="w-4/5 h-0.5 bg-green-500 shadow-[0_0_10px_#22c55e] animate-pulse"></div></div>
-            <button onclick="stopCamera()" class="absolute top-3 right-3 bg-red-500 text-white w-10 h-10 rounded-full z-20"><i class="fas fa-times"></i></button>
-        </div>
-        <div class="grid grid-cols-4 gap-2 my-6 text-center">
-            <div class="bg-white dark:bg-zinc-900 p-3 rounded-xl border dark:border-zinc-700"><span class="text-[8px] font-bold text-blue-500 uppercase">Rota</span><p id="statPending" class="text-lg font-bold">0</p></div>
-            <div class="bg-white dark:bg-zinc-900 p-3 rounded-xl border dark:border-zinc-700"><span class="text-[8px] font-bold text-green-500 uppercase">OK</span><p id="statOk" class="text-lg font-bold">0</p></div>
-            <div class="bg-white dark:bg-zinc-900 p-3 rounded-xl border dark:border-zinc-700"><span class="text-[8px] font-bold text-red-500 uppercase">Falta</span><p id="statMissing" class="text-lg font-bold">0</p></div>
-            <div class="bg-white dark:bg-zinc-900 p-3 rounded-xl border dark:border-zinc-700"><span class="text-[8px] font-bold text-gray-500 uppercase">Perdido</span><p id="statLost" class="text-lg font-bold">0</p></div>
-        </div>
-        <div id="packageList" class="bg-white dark:bg-zinc-900 rounded-2xl border dark:border-zinc-700 divide-y dark:divide-zinc-800 max-h-[500px] overflow-y-auto no-scrollbar"></div>
-    </main>
-
-    <script>
-        let allPackages = [];
-        let isConferenceMode = false;
-        let codeReader = null;
-        let isCameraActive = false;
-        let audioCtx = null;
-        let lastScannedCode = '';
-        let lastScannedTime = 0;
-
-        function toggleTheme() {
-            const isDark = document.documentElement.classList.toggle('dark');
-            document.getElementById('themeIcon').className = isDark ? 'fas fa-sun' : 'fas fa-moon';
-        }
-        function toggleMenu() {
-            const side = document.getElementById('sideMenu');
-            const over = document.getElementById('menuOverlay');
-            const isOpen = !side.classList.contains('-translate-x-full');
-            if(!isOpen) { over.classList.remove('hidden'); setTimeout(() => { over.classList.remove('opacity-0'); side.classList.remove('-translate-x-full'); }, 10); }
-            else { over.classList.add('opacity-0'); side.classList.add('-translate-x-full'); setTimeout(() => over.classList.add('hidden'), 300); }
-        }
-        function switchView(v) {
-            document.getElementById('view-zap').classList.add('hidden');
-            document.getElementById('view-scan').classList.add('hidden');
-            document.getElementById('view-' + v).classList.remove('hidden');
-            stopCamera();
-        }
-
-        function startNewBatch(mode) {
-            initAudio();
-            isConferenceMode = (mode === 'return');
-            document.getElementById('userSection').classList.remove('hidden');
-            document.getElementById('startSection').classList.add('hidden');
-            document.getElementById('barcodeInput').focus();
-        }
-
-        async function processCode(code) {
-            if(!code) return;
-            initAudio();
-            const now = Date.now();
-            if (code === lastScannedCode && (now - lastScannedTime) < 4000) return;
-            lastScannedCode = code; lastScannedTime = now;
-
-            if(isConferenceMode) {
-                const pkg = allPackages.find(p => p.id === code && p.collection === 'bipados');
-                if(pkg) { await window.moveToDevolvedFirebase(code); showToast("Item Devolvido!", "bg-green-600", "fa-check"); playBeep(true); }
-                else { showToast("Não registrado ou já OK", "bg-red-600", "fa-times"); playBeep(false); }
-            } else {
-                const existing = allPackages.find(p => p.id === code && p.collection === 'bipados');
-                if(existing) { showToast("Já está em rota!", "bg-yellow-500", "fa-info"); playBeep(false); }
-                else { await window.saveToFirebase(code); showToast("Adicionado!", "bg-blue-600", "fa-plus"); playBeep(true); }
-            }
-        }
-
-        async function finalizeOperation() {
-            if(confirm("Deseja finalizar o procedimento?")) {
-                if (isConferenceMode) await window.finalizeInFirebase();
-                document.getElementById('userSection').classList.add('hidden');
-                document.getElementById('startSection').classList.remove('hidden');
-                stopCamera();
-                showToast("Concluído!", "bg-slate-800", "fa-flag-checkered");
-            }
-        }
-
-        function updateScanUI() {
-            const list = document.getElementById('packageList');
-            if(allPackages.length === 0) list.innerHTML = `<p class="p-12 text-center text-slate-400 italic text-sm">Vazio.</p>`;
-            else list.innerHTML = allPackages.map(p => {
-                let sCol = "bg-blue-100 text-blue-700"; let rCol = "row-route";
-                if(p.collection === 'devolvidos') { sCol = "bg-green-100 text-green-700"; rCol = "row-done"; }
-                if(p.collection === 'faltas') { sCol = "bg-red-100 text-red-700"; rCol = "row-missing"; }
-                if(p.collection === 'perdidos') { sCol = "bg-zinc-800 text-white"; rCol = "row-lost"; }
-                return `<div class="p-4 flex justify-between items-center ${rCol} border-b dark:border-zinc-800/50 transition-all"><div><div class="flex items-center gap-2"><span class="font-mono font-bold text-sm text-gray-700 dark:text-gray-200">${p.id}</span><span class="text-[8px] font-bold px-1.5 py-0.5 rounded ${sCol}">${p.status.toUpperCase()}</span></div><p class="text-[9px] text-slate-400 mt-0.5 uppercase tracking-tighter">${p.time}</p></div></div>`;
-            }).join('');
-            document.getElementById('statPending').innerText = allPackages.filter(p => p.collection === 'bipados').length;
-            document.getElementById('statOk').innerText = allPackages.filter(p => p.collection === 'devolvidos').length;
-            document.getElementById('statMissing').innerText = allPackages.filter(p => p.collection === 'faltas').length;
-            document.getElementById('statLost').innerText = allPackages.filter(p => p.collection === 'perdidos').length;
-        }
-
-        function initAudio() { if(!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)(); if(audioCtx.state === 'suspended') audioCtx.resume(); }
-        function playBeep(s) { if(!audioCtx) return; const o = audioCtx.createOscillator(); const g = audioCtx.createGain(); o.type = s ? 'square' : 'sawtooth'; o.frequency.setValueAtTime(s ? 2000 : 180, audioCtx.currentTime); g.gain.setValueAtTime(0.3, audioCtx.currentTime); g.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1); o.connect(g); g.connect(audioCtx.destination); o.start(); o.stop(audioCtx.currentTime + 0.1); }
-        function showToast(m, c, i) { const container = document.getElementById('toast-container'); const toast = document.createElement('div'); toast.className = `toast-item ${c}`; toast.innerHTML = `<i class="fas ${i}"></i> <span>${m}</span>`; container.appendChild(toast); setTimeout(() => toast.classList.add('show'), 10); setTimeout(() => { toast.classList.remove('show'); setTimeout(() => toast.remove(), 400); }, 4000); }
-        function handleManualInput() { const i = document.getElementById('barcodeInput'); if(i.value.trim()) processCode(i.value.trim()); i.value = ""; }
-        document.getElementById('barcodeInput').addEventListener('keypress', (e) => { if(e.key === 'Enter') handleManualInput(); });
-        async function toggleCamera() { initAudio(); if(isCameraActive) { stopCamera(); return; } document.getElementById('cameraContainer').classList.remove('hidden'); document.getElementById('camBtnText').innerText = "Parar"; if(!codeReader) codeReader = new ZXing.BrowserMultiFormatReader(); isCameraActive = true; try { await codeReader.decodeFromConstraints({ video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } } }, 'readerVideo', (res) => { if(res) processCode(res.getText()); }); setTimeout(() => { const v = document.getElementById('readerVideo'); if (v && v.srcObject) { const t = v.srcObject.getVideoTracks()[0]; const c = t.getCapabilities(); if (c && c.zoom) t.applyConstraints({ advanced: [{ zoom: Math.min(2.0, c.zoom.max) }] }); } }, 1000); } catch (err) { stopCamera(); showToast("Erro câmera", "bg-red-500", "fa-video-slash"); } }
-        function stopCamera() { if(codeReader) codeReader.reset(); isCameraActive = false; document.getElementById('cameraContainer').classList.add('hidden'); document.getElementById('camBtnText').innerText = "Scanner Câmera"; }
-        window.toggleAuthMode = (r) => { document.getElementById('nameField').classList.toggle('hidden', !r); document.getElementById('loginBtn').classList.toggle('hidden', r); document.getElementById('registerBtn').classList.toggle('hidden', !r); document.getElementById('toggleText').innerHTML = r ? 'Já tem conta? <a href="#" onclick="toggleAuthMode(false)" class="text-blue-500 font-bold">Faça login</a>' : 'Não tem conta? <a href="#" onclick="toggleAuthMode(true)" class="text-blue-500 font-bold">Crie agora</a>'; };
-    </script>
-</body>
-</html>
+            <div class="w-20 h-20 rounded-3xl bg-blue-600 flex items-center justify-center mx-auto mb-4 shadow-xl shadow-blue-500/20"><i class="fas fa-truck-fast text-4xl text-white"></i></div>
+            <h1 class="text-2xl font-bold mb-1 leading-tight text-gray-800 dark:text-white">Multiferram
