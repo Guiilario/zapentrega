@@ -24,6 +24,7 @@
     <!-- FIREBASE INTEGRATION (MODULAR SDK) -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+        import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
         import { getFirestore, collection, addDoc, serverTimestamp, query, onSnapshot, orderBy, updateDoc, doc, getDocs, where, writeBatch } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
         const firebaseConfig = {
@@ -36,12 +37,75 @@
         };
 
         const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
         const db = getFirestore(app);
+        const appId = "logistica-pacotes";
+
+        let unsubscribeSnapshot = null;
+        let currentUser = null;
+
+        // Gestão de Autenticação
+        onAuthStateChanged(auth, (user) => {
+            if (user) {
+                currentUser = user;
+                showApp();
+                initDataListener(user.uid);
+            } else {
+                currentUser = null;
+                showLogin();
+                if (unsubscribeSnapshot) unsubscribeSnapshot();
+            }
+        });
+
+        // Funções de Auth
+        window.handleAuth = async (mode) => {
+            const email = document.getElementById('authEmail').value;
+            const password = document.getElementById('authPassword').value;
+
+            if (!email || !password) return showToast("Preencha todos os campos", "bg-red-500", "fa-exclamation-circle");
+
+            try {
+                if (mode === 'login') {
+                    await signInWithEmailAndPassword(auth, email, password);
+                    showToast("Bem-vindo de volta!", "bg-green-600", "fa-check");
+                } else {
+                    await createUserWithEmailAndPassword(auth, email, password);
+                    showToast("Conta criada com sucesso!", "bg-green-600", "fa-user-plus");
+                }
+            } catch (error) {
+                let msg = "Erro na autenticação";
+                if (error.code === 'auth/weak-password') msg = "Senha demasiado fraca";
+                if (error.code === 'auth/email-already-in-use') msg = "E-mail já registado";
+                if (error.code === 'auth/invalid-credential') msg = "E-mail ou senha incorretos";
+                showToast(msg, "bg-red-500", "fa-times-circle");
+            }
+        };
+
+        window.logout = () => signOut(auth);
+
+        // Listener Real-time Individualizado
+        function initDataListener(userId) {
+            const q = query(
+                collection(db, 'artifacts', appId, 'users', userId, 'bipados'), 
+                orderBy("timestamp", "desc")
+            );
+            
+            unsubscribeSnapshot = onSnapshot(q, (snapshot) => {
+                allPackages = [];
+                snapshot.forEach((doc) => {
+                    const data = doc.data();
+                    const time = data.timestamp ? data.timestamp.toDate().toLocaleTimeString('pt-BR') : "...";
+                    allPackages.push({ ...data, time: time });
+                });
+                updateScanUI();
+            });
+        }
 
         // Salvar novo pacote (Em rota)
         window.saveToFirebase = async (code, user, status) => {
+            if (!currentUser) return;
             try {
-                await addDoc(collection(db, "bipados"), {
+                await addDoc(collection(db, 'artifacts', appId, 'users', currentUser.uid, 'bipados'), {
                     id: code,
                     user: user,
                     status: status,
@@ -49,17 +113,21 @@
                 });
             } catch (e) {
                 console.error("Erro Firebase:", e);
-                showToast("Erro de conexão", "bg-red-500", "fa-cloud-slash");
+                showToast("Erro ao guardar dados", "bg-red-500", "fa-cloud-slash");
             }
         };
 
         // Atualizar Status Unitário
         window.updateStatusFirebase = async (code, newStatus) => {
+            if (!currentUser) return;
             try {
-                const q = query(collection(db, "bipados"), where("id", "==", code));
+                const q = query(
+                    collection(db, 'artifacts', appId, 'users', currentUser.uid, 'bipados'), 
+                    where("id", "==", code)
+                );
                 const querySnapshot = await getDocs(q);
                 querySnapshot.forEach(async (document) => {
-                    const docRef = doc(db, "bipados", document.id);
+                    const docRef = doc(db, 'artifacts', appId, 'users', currentUser.uid, 'bipados', document.id);
                     await updateDoc(docRef, { 
                         status: newStatus,
                         lastUpdate: serverTimestamp()
@@ -71,14 +139,18 @@
         };
 
         // Finalizar: Transformar 'Em rota' em 'Falta'
-        window.finalizeInFirebase = async (user) => {
+        window.finalizeInFirebase = async () => {
+            if (!currentUser) return false;
             try {
-                const q = query(collection(db, "bipados"), where("status", "==", "Em rota"));
+                const q = query(
+                    collection(db, 'artifacts', appId, 'users', currentUser.uid, 'bipados'), 
+                    where("status", "==", "Em rota")
+                );
                 const querySnapshot = await getDocs(q);
                 const batch = writeBatch(db);
                 
                 querySnapshot.forEach((document) => {
-                    const docRef = doc(db, "bipados", document.id);
+                    const docRef = doc(db, 'artifacts', appId, 'users', currentUser.uid, 'bipados', document.id);
                     batch.update(docRef, { status: "Falta" });
                 });
 
@@ -90,17 +162,20 @@
             }
         };
 
-        // Listener Real-time
-        const q = query(collection(db, "bipados"), orderBy("timestamp", "desc"));
-        onSnapshot(q, (snapshot) => {
-            allPackages = [];
-            snapshot.forEach((doc) => {
-                const data = doc.data();
-                const time = data.timestamp ? data.timestamp.toDate().toLocaleTimeString('pt-BR') : "...";
-                allPackages.push({ ...data, time: time });
-            });
-            updateScanUI();
-        });
+        function showApp() {
+            document.getElementById('view-auth').classList.add('hidden');
+            document.getElementById('main-navbar').classList.remove('hidden');
+            switchView('zap');
+        }
+
+        function showLogin() {
+            document.getElementById('view-auth').classList.remove('hidden');
+            document.getElementById('main-navbar').classList.add('hidden');
+            document.getElementById('view-zap').classList.add('hidden');
+            document.getElementById('view-scan').classList.add('hidden');
+            document.getElementById('sideMenu').classList.add('-translate-x-full');
+            document.getElementById('menuOverlay').classList.add('hidden');
+        }
     </script>
 
     <style>
@@ -118,7 +193,7 @@
 <body class="bg-gray-100 dark:bg-black text-gray-800 dark:text-gray-100 min-h-screen flex flex-col transition-colors duration-300">
 
     <!-- Navbar -->
-    <div class="fixed top-0 left-0 right-0 h-16 z-40 pointer-events-none">
+    <div id="main-navbar" class="fixed top-0 left-0 right-0 h-16 z-40 pointer-events-none hidden">
         <button onclick="toggleMenu()" class="absolute top-4 left-4 w-10 h-10 rounded-full bg-white dark:bg-zinc-800 shadow-lg flex items-center justify-center text-gray-600 dark:text-gray-200 pointer-events-auto ring-1 ring-gray-200 dark:ring-gray-600"><i class="fas fa-bars"></i></button>
         <button onclick="toggleTheme()" class="absolute top-4 right-4 w-10 h-10 rounded-full bg-white dark:bg-zinc-800 shadow-lg flex items-center justify-center text-gray-600 dark:text-gray-200 pointer-events-auto ring-1 ring-gray-200 dark:ring-gray-600"><i id="themeIcon" class="fas fa-sun"></i></button>
     </div>
@@ -137,21 +212,57 @@
             <a href="#" onclick="switchView('scan'); toggleMenu();" class="flex items-center gap-3 p-3 rounded-xl hover:bg-gray-100 dark:hover:bg-zinc-800 transition-colors">
                 <div class="w-8 h-8 rounded-lg bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-600"><i class="fas fa-barcode"></i></div> Gestão de Lotes
             </a>
+            <div class="mt-auto pt-4 border-t border-gray-100 dark:border-zinc-800">
+                <button onclick="logout()" class="flex items-center gap-3 p-3 w-full rounded-xl hover:bg-red-50 dark:hover:bg-red-900/20 text-red-600 transition-colors">
+                    <i class="fas fa-sign-out-alt"></i> Sair da Conta
+                </button>
+            </div>
         </nav>
     </div>
 
-    <!-- VIEW: ZAP SEM ADD (Completa) -->
-    <main id="view-zap" class="w-full max-w-md mx-auto p-6 pt-20 animate-fade-in relative z-10 flex flex-col justify-center min-h-screen pb-10">
-        <!-- Cabeçalho -->
+    <!-- VIEW: AUTH (Login/Registo) -->
+    <main id="view-auth" class="flex-1 flex items-center justify-center p-6">
+        <div class="w-full max-w-sm bg-white dark:bg-zinc-900 p-8 rounded-3xl shadow-2xl border border-gray-100 dark:border-zinc-800">
+            <div class="text-center mb-8">
+                <div class="w-20 h-20 rounded-3xl bg-blue-600 flex items-center justify-center mx-auto mb-4 shadow-xl shadow-blue-500/20">
+                    <i class="fas fa-truck-fast text-4xl text-white"></i>
+                </div>
+                <h1 class="text-2xl font-bold">Multiferramentas</h1>
+                <p class="text-sm text-gray-500 mt-1">Faça login para continuar</p>
+            </div>
+
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-xs font-bold text-gray-400 uppercase ml-1 mb-1">E-mail</label>
+                    <input type="email" id="authEmail" class="w-full bg-gray-50 dark:bg-zinc-800 p-4 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 border border-transparent dark:border-zinc-700" placeholder="exemplo@email.com">
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-gray-400 uppercase ml-1 mb-1">Senha</label>
+                    <input type="password" id="authPassword" class="w-full bg-gray-50 dark:bg-zinc-800 p-4 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 border border-transparent dark:border-zinc-700" placeholder="••••••••">
+                </div>
+
+                <div class="pt-2 space-y-3">
+                    <button onclick="handleAuth('login')" class="w-full bg-blue-600 hover:bg-blue-500 text-white py-4 rounded-xl font-bold shadow-lg shadow-blue-500/20 transition-all btn-pulse">
+                        Entrar
+                    </button>
+                    <button onclick="handleAuth('register')" class="w-full bg-transparent hover:bg-gray-100 dark:hover:bg-zinc-800 text-gray-500 py-3 rounded-xl font-semibold text-sm transition-all">
+                        Criar nova conta
+                    </button>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- VIEW: ZAP SEM ADD -->
+    <main id="view-zap" class="w-full max-w-md mx-auto p-6 pt-20 hidden flex-col justify-center min-h-screen pb-10">
         <div class="text-center mb-8">
             <div class="inline-flex items-center justify-center w-20 h-20 rounded-full bg-green-100 dark:bg-green-900/30 mb-4 ring-1 ring-green-500/30 shadow-lg">
                 <i class="fab fa-whatsapp text-5xl text-green-600 dark:text-green-400"></i>
             </div>
-            <h1 class="text-2xl font-bold text-gray-800 dark:text-white tracking-tight">Zap Entregas</h1>
-            <p class="text-gray-500 dark:text-gray-400 text-sm mt-1">Contato rápido por Parada</p>
+            <h1 class="text-2xl font-bold">Zap Entregas</h1>
+            <p class="text-gray-500 text-sm mt-1">Contato rápido por Parada</p>
         </div>
 
-        <!-- Formulário -->
         <div class="bg-white dark:bg-zinc-900 p-6 rounded-2xl border border-gray-200 dark:border-zinc-700 shadow-xl">
             <div class="flex justify-between ml-1 mb-2">
                 <label class="text-xs font-bold text-gray-500 dark:text-gray-300 uppercase tracking-wider">Parada</label>
@@ -160,36 +271,22 @@
             
             <div class="flex gap-3 mb-2">
                 <div class="w-24">
-                    <input type="number" id="stopInput" class="w-full bg-gray-100 dark:bg-zinc-800 text-center text-gray-900 dark:text-white py-4 rounded-xl border border-transparent dark:border-zinc-700 focus:bg-white dark:focus:bg-zinc-700 focus:border-green-500 outline-none font-bold text-lg" placeholder="00" min="0" max="999" oninput="if(this.value.length > 3) this.value = this.value.slice(0,3);">
+                    <input type="number" id="stopInput" class="w-full bg-gray-100 dark:bg-zinc-800 text-center py-4 rounded-xl border border-transparent dark:border-zinc-700 focus:bg-white dark:focus:bg-zinc-700 focus:border-green-500 outline-none font-bold text-lg" placeholder="00">
                 </div>
                 <div class="flex-1 relative">
-                    <input type="tel" id="phoneInput" class="w-full bg-gray-100 dark:bg-zinc-800 text-gray-900 dark:text-white px-4 py-4 rounded-xl border border-transparent dark:border-zinc-700 focus:bg-white dark:focus:bg-zinc-700 focus:border-green-500 outline-none font-mono text-center text-lg" placeholder="(11) 99999-9999" maxlength="15">
+                    <input type="tel" id="phoneInput" class="w-full bg-gray-100 dark:bg-zinc-800 px-4 py-4 rounded-xl border border-transparent dark:border-zinc-700 focus:bg-white dark:focus:bg-zinc-700 focus:border-green-500 outline-none font-mono text-center text-lg" placeholder="(11) 99999-9999">
                 </div>
             </div>
 
-            <!-- Botões de Ação Rápida -->
             <div class="flex justify-between items-center px-1 mb-6">
-                <button onclick="pasteFromClipboard()" class="text-xs text-gray-500 dark:text-gray-400 hover:text-green-600 transition-colors flex items-center gap-2 py-1 px-2 rounded hover:bg-gray-100 dark:hover:bg-zinc-800 font-medium">
-                    <i class="far fa-clipboard"></i> Colar
-                </button>
-                <button onclick="clearInputs()" class="text-xs text-gray-500 dark:text-gray-400 hover:text-red-500 transition-colors flex items-center gap-2 py-1 px-2 rounded hover:bg-gray-100 dark:hover:bg-zinc-800 font-medium">
-                    <i class="fas fa-trash-alt"></i> Apagar Tudo
-                </button>
+                <button onclick="pasteFromClipboard()" class="text-xs text-gray-500 hover:text-green-600 flex items-center gap-2 font-medium"><i class="far fa-clipboard"></i> Colar</button>
+                <button onclick="clearInputs()" class="text-xs text-gray-500 hover:text-red-500 flex items-center gap-2 font-medium"><i class="fas fa-trash-alt"></i> Apagar Tudo</button>
             </div>
 
-            <!-- Input de Mensagem -->
-            <label class="block text-xs font-bold text-gray-500 dark:text-gray-300 uppercase tracking-wider mb-2 ml-1">Mensagem</label>
-            <div class="relative mb-6">
-                <textarea id="messageInput" class="w-full bg-gray-100 dark:bg-zinc-800 text-gray-900 dark:text-white p-4 rounded-xl border border-transparent dark:border-zinc-700 focus:bg-white dark:focus:bg-zinc-700 focus:border-green-500 outline-none h-24 text-sm resize-none">Olá. Entrega do Mercado Livre.</textarea>
-            </div>
+            <textarea id="messageInput" class="w-full bg-gray-100 dark:bg-zinc-800 p-4 rounded-xl h-24 mb-4 resize-none text-sm outline-none">Olá. Entrega do Mercado Livre.</textarea>
 
-            <button onclick="openWhatsapp()" class="w-full bg-green-600 hover:bg-green-500 text-white font-bold py-4 rounded-xl shadow-lg transition-all btn-pulse flex items-center justify-center gap-2 mb-4">
-                <span>Iniciar Conversa</span> <i class="fas fa-arrow-right"></i>
-            </button>
-
-            <button onclick="openHistoryModal()" class="w-full bg-gray-200 dark:bg-zinc-800 hover:bg-gray-300 dark:hover:bg-zinc-700 text-gray-600 dark:text-gray-200 font-semibold py-3 rounded-xl transition-all flex items-center justify-center gap-2 text-sm uppercase tracking-wider">
-                <i class="fas fa-history"></i> Histórico do dia
-            </button>
+            <button onclick="openWhatsapp()" class="w-full bg-green-600 hover:bg-green-500 text-white font-bold py-4 rounded-xl shadow-lg transition-all btn-pulse mb-4">Iniciar Conversa</button>
+            <button onclick="openHistoryModal()" class="w-full bg-gray-200 dark:bg-zinc-800 hover:bg-gray-300 py-3 rounded-xl transition-all flex items-center justify-center gap-2 text-sm uppercase tracking-wider font-bold">Histórico do dia</button>
         </div>
     </main>
 
@@ -197,20 +294,19 @@
     <main id="view-scan" class="w-full max-w-2xl mx-auto p-4 pt-24 hidden pb-20">
         <header class="flex justify-between items-center mb-6 bg-white dark:bg-zinc-900 p-6 rounded-2xl shadow-sm border border-gray-200 dark:border-zinc-700">
             <div>
-                <h1 class="text-2xl font-bold">Gestão <span class="text-blue-600">Cloud</span></h1>
+                <h1 class="text-2xl font-bold text-gray-800 dark:text-white">Meus <span class="text-blue-600">Lotes</span></h1>
                 <p id="modeIndicator" class="text-[10px] font-bold uppercase tracking-widest text-slate-400 mt-1">Status: Aguardando</p>
             </div>
             <button onclick="location.reload()" class="text-slate-400 hover:text-blue-500"><i class="fas fa-sync-alt text-xl"></i></button>
         </header>
 
-        <!-- Sessão Ativa -->
         <div id="userSection" class="bg-blue-600 rounded-2xl p-6 shadow-lg text-white mb-6 hidden">
             <div class="flex justify-between items-center mb-4">
                 <div>
-                    <span class="text-blue-100 text-[10px] font-bold">USUÁRIO ATIVO:</span>
-                    <h2 id="currentUserName" class="text-2xl font-bold italic">Nenhum</h2>
+                    <span class="text-blue-100 text-[10px] font-bold uppercase tracking-widest">Sessão de Bipagem</span>
+                    <h2 id="currentUserName" class="text-xl font-bold italic">Ativa</h2>
                 </div>
-                <button onclick="finalizeOperation()" class="bg-white/20 hover:bg-white/40 px-4 py-2 rounded-xl font-bold text-sm border border-white/30">Finalizar</button>
+                <button onclick="finalizeOperation()" class="bg-white/20 hover:bg-white/40 px-4 py-2 rounded-xl font-bold text-sm border border-white/30">Finalizar Lote</button>
             </div>
             <div class="flex gap-2">
                 <input type="text" id="barcodeInput" placeholder="Bipar código..." class="flex-1 p-4 bg-black/20 rounded-xl text-white outline-none placeholder-blue-100 font-mono">
@@ -221,28 +317,24 @@
             </button>
         </div>
 
-        <!-- Iniciar Lote -->
-        <div id="startSection" class="bg-white dark:bg-zinc-900 rounded-2xl p-8 shadow-sm border border-gray-200 dark:border-zinc-700 text-center">
-            <input type="text" id="newUserName" placeholder="Seu Nome" class="w-full p-4 mb-4 bg-gray-50 dark:bg-zinc-800 border dark:border-zinc-700 rounded-2xl text-center text-lg outline-none">
+        <div id="startSection" class="bg-white dark:bg-zinc-900 rounded-2xl p-8 shadow-sm border dark:border-zinc-700 text-center">
+            <div class="mb-4 bg-blue-50 dark:bg-blue-900/20 w-16 h-16 rounded-full flex items-center justify-center mx-auto text-blue-600"><i class="fas fa-box text-2xl"></i></div>
+            <h3 class="text-xl font-bold mb-4">Operação de Lote</h3>
             <div class="flex gap-3">
                 <button onclick="startNewBatch('out')" class="flex-1 py-4 bg-blue-600 text-white rounded-2xl font-bold shadow-lg">Adicionar</button>
                 <button onclick="startNewBatch('return')" class="flex-1 py-4 bg-green-600 text-white rounded-2xl font-bold shadow-lg">Devolver</button>
             </div>
         </div>
 
-        <!-- Câmera Container -->
         <div id="cameraContainer" class="hidden mb-6 mx-auto w-full max-w-[300px] aspect-square bg-black rounded-2xl overflow-hidden relative border-4 border-blue-500/20 shadow-2xl">
             <video id="readerVideo" class="w-full h-full object-cover scale-105" autoplay muted playsinline></video>
             <div class="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
-                <!-- Linha de scanner estética -->
                 <div class="w-4/5 h-0.5 bg-green-500 animate-pulse shadow-[0_0_10px_#22c55e]"></div>
             </div>
-            <!-- Moldura de foco estática -->
             <div class="absolute inset-0 border-[40px] border-black/40 pointer-events-none z-0"></div>
             <button onclick="stopCamera()" class="absolute top-3 right-3 bg-red-500 text-white w-10 h-10 rounded-full flex items-center justify-center shadow-lg z-20"><i class="fas fa-times"></i></button>
         </div>
 
-        <!-- Stats -->
         <div class="grid grid-cols-3 gap-3 my-6">
             <div class="bg-white dark:bg-zinc-900 p-4 rounded-2xl border dark:border-zinc-700 text-center">
                 <span class="text-[9px] font-bold text-blue-500 uppercase">Em Rota</span>
@@ -258,55 +350,47 @@
             </div>
         </div>
 
-        <!-- Lista -->
         <div class="bg-white dark:bg-zinc-900 rounded-2xl shadow-sm border dark:border-zinc-700 overflow-hidden">
-            <div class="p-4 bg-slate-50 dark:bg-zinc-800 border-b dark:border-zinc-700 flex justify-between items-center text-[10px] font-bold">
-                <span class="text-slate-500 uppercase tracking-widest">Registros em Tempo Real</span>
+            <div class="p-4 bg-slate-50 dark:bg-zinc-800 border-b dark:border-zinc-700 flex justify-between items-center text-[10px] font-bold uppercase tracking-widest text-gray-500">
+                <span>Registros Pessoais</span>
                 <span id="listCount" class="text-blue-600 bg-blue-50 dark:bg-blue-900/30 px-2 py-1 rounded">0 total</span>
             </div>
-            <div id="packageList" class="divide-y dark:divide-zinc-800 max-h-[500px] overflow-y-auto">
-                <div class="p-12 text-center text-slate-400 italic">Conectando ao banco...</div>
+            <div id="packageList" class="divide-y dark:divide-zinc-800 max-h-[500px] overflow-y-auto no-scrollbar">
+                <div class="p-12 text-center text-slate-400 italic">Lista vazia.</div>
             </div>
         </div>
     </main>
 
-    <!-- Modal de Histórico (ZAP) -->
+    <!-- Modal Histórico (ZAP) -->
     <div id="historyModal" class="fixed inset-0 z-50 hidden flex items-center justify-center px-4">
         <div class="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity" onclick="closeHistoryModal()"></div>
-        <div class="relative w-full max-w-sm bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl p-6 modal-animate flex flex-col max-h-[80vh] border border-transparent dark:border-zinc-700">
-            <div class="flex justify-between items-center mb-4 border-b border-gray-200 dark:border-zinc-700 pb-4">
-                <h3 class="text-lg font-bold text-gray-800 dark:text-white flex items-center gap-2">
-                    <i class="fas fa-calendar-day text-green-500"></i> Histórico de Hoje
-                </h3>
-                <button onclick="closeHistoryModal()" class="text-gray-400 hover:text-red-500 transition-colors">
-                    <i class="fas fa-times text-xl"></i>
-                </button>
+        <div class="relative w-full max-w-sm bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl p-6 modal-animate flex flex-col max-h-[80vh] border dark:border-zinc-700">
+            <div class="flex justify-between items-center mb-4 border-b dark:border-zinc-700 pb-4">
+                <h3 class="text-lg font-bold flex items-center gap-2"><i class="fas fa-calendar-day text-green-500"></i> Hoje</h3>
+                <button onclick="closeHistoryModal()" class="text-gray-400 hover:text-red-500 transition-colors"><i class="fas fa-times text-xl"></i></button>
             </div>
-            <div id="modalHistoryList" class="flex-1 overflow-y-auto space-y-2 min-h-[100px] no-scrollbar"></div>
-            <div class="mt-4 pt-3 border-t border-gray-200 dark:border-zinc-700 flex justify-between items-center px-1">
-                 <button onclick="clearDailyHistory()" class="flex items-center gap-2 text-xs text-red-500 font-bold uppercase transition-colors px-2 py-2 rounded hover:bg-red-50 dark:hover:bg-red-900/20">
-                    <i class="fas fa-trash-alt"></i> Limpar
-                </button>
-                <button onclick="saveHistoryPDF()" class="flex items-center gap-2 text-xs text-blue-600 dark:text-blue-400 font-bold uppercase transition-colors px-3 py-2 rounded bg-blue-50 dark:bg-blue-900/20">
-                    <i class="fas fa-file-pdf"></i> PDF
-                </button>
+            <div id="modalHistoryList" class="flex-1 overflow-y-auto space-y-2 no-scrollbar"></div>
+            <div class="mt-4 pt-3 border-t dark:border-zinc-700 flex justify-between items-center">
+                 <button onclick="clearDailyHistory()" class="text-xs text-red-500 font-bold uppercase py-2 px-3 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20"><i class="fas fa-trash-alt"></i></button>
+                <button onclick="saveHistoryPDF()" class="text-xs text-blue-600 font-bold uppercase px-3 py-2 rounded-lg bg-blue-50 dark:bg-blue-900/20"><i class="fas fa-file-pdf"></i> PDF</button>
             </div>
         </div>
     </div>
 
+    <!-- Toast -->
     <div id="toast" class="fixed top-5 left-1/2 -translate-x-1/2 px-6 py-3 rounded-full shadow-2xl transition-all duration-300 opacity-0 z-[100] flex items-center gap-2 text-sm font-bold text-white pointer-events-none">
         <i id="toastIcon"></i> <span id="toastMsg"></span>
     </div>
 
     <script>
         let allPackages = [];
-        let currentBatchUser = null;
+        let currentBatchUser = "Entregador"; 
         let isConferenceMode = false;
         let codeReader = null;
         let isCameraActive = false;
         let audioCtx = null;
 
-        // UI Controls
+        // UI Helpers
         function toggleTheme() {
             const isDark = document.documentElement.classList.toggle('dark');
             document.getElementById('themeIcon').className = isDark ? 'fas fa-sun' : 'fas fa-moon';
@@ -331,30 +415,20 @@
             stopCamera();
         }
 
-        // Logic Gestão de Lotes
+        // Logic Lotes
         function startNewBatch(mode) {
-            const name = document.getElementById('newUserName').value.trim();
-            if(!name) return showToast("Digite seu nome", "bg-red-500", "fa-user");
-            
             initAudio();
-            currentBatchUser = name;
             isConferenceMode = (mode === 'return');
-            
-            document.getElementById('currentUserName').innerText = name;
             document.getElementById('modeIndicator').innerText = isConferenceMode ? "MODO: DEVOLVER" : "MODO: ADICIONAR";
-            
-            const userSection = document.getElementById('userSection');
-            userSection.className = isConferenceMode ? "bg-green-600 rounded-2xl p-6 shadow-lg text-white mb-6" : "bg-blue-600 rounded-2xl p-6 shadow-lg text-white mb-6";
-            
+            document.getElementById('userSection').className = isConferenceMode ? "bg-green-600 rounded-2xl p-6 shadow-lg text-white mb-6" : "bg-blue-600 rounded-2xl p-6 shadow-lg text-white mb-6";
             document.getElementById('startSection').classList.add('hidden');
-            userSection.classList.remove('hidden');
+            document.getElementById('userSection').classList.remove('hidden');
             document.getElementById('barcodeInput').focus();
         }
 
         async function processCode(code) {
             if(!code) return;
             initAudio();
-            
             if(isConferenceMode) {
                 const pkg = allPackages.find(p => p.id === code);
                 if(pkg) {
@@ -363,41 +437,38 @@
                         playBeep(false);
                     } else {
                         await window.updateStatusFirebase(code, 'Devolvido');
-                        showToast("Devolvido: " + code, "bg-green-600", "fa-check");
+                        showToast("Devolvido!", "bg-green-600", "fa-check");
                         playBeep(true);
                     }
                 } else {
-                    showToast("ERRO: Pacote não registrado na rota!", "bg-red-600", "fa-times-circle");
+                    showToast("ERRO: Pacote não registrado!", "bg-red-600", "fa-times-circle");
                     playBeep(false);
                 }
             } else {
                 const pkg = allPackages.find(p => p.id === code);
-                if(pkg) {
-                    if(pkg.status === 'Em rota') {
-                        showToast("Já está em rota!", "bg-yellow-500", "fa-info-circle");
-                        playBeep(false);
-                    } else {
-                        await window.updateStatusFirebase(code, 'Em rota');
-                        showToast("Re-adicionado à rota", "bg-blue-600", "fa-redo");
-                        playBeep(true);
-                    }
+                if(pkg && pkg.status === 'Em rota') {
+                    showToast("Já está em rota!", "bg-yellow-500", "fa-info-circle");
+                    playBeep(false);
+                } else if(pkg) {
+                    await window.updateStatusFirebase(code, 'Em rota');
+                    showToast("Re-adicionado à rota", "bg-blue-600", "fa-redo");
+                    playBeep(true);
                 } else {
                     await window.saveToFirebase(code, currentBatchUser, 'Em rota');
-                    showToast("Adicionado: " + code, "bg-blue-600", "fa-plus");
+                    showToast("Adicionado!", "bg-blue-600", "fa-plus");
                     playBeep(true);
                 }
             }
         }
 
         async function finalizeOperation() {
-            if(confirm("Deseja finalizar o lote? Itens não devolvidos serão marcados como 'Falta'.")) {
-                const ok = await window.finalizeInFirebase(currentBatchUser);
+            if(confirm("Finalizar lote? Itens não devolvidos ficam como 'Falta'.")) {
+                const ok = await window.finalizeInFirebase();
                 if(ok) {
-                    currentBatchUser = null;
                     document.getElementById('userSection').classList.add('hidden');
                     document.getElementById('startSection').classList.remove('hidden');
                     stopCamera();
-                    showToast("Operação Finalizada!", "bg-slate-800", "fa-flag-checkered");
+                    showToast("Lote Finalizado!", "bg-slate-800", "fa-flag-checkered");
                 }
             }
         }
@@ -405,230 +476,123 @@
         function updateScanUI() {
             const list = document.getElementById('packageList');
             if(allPackages.length === 0) {
-                list.innerHTML = `<p class="p-12 text-center text-slate-400 italic">Nenhum registro no banco.</p>`;
+                list.innerHTML = `<p class="p-12 text-center text-slate-400 italic text-sm">Nenhum pacote registado.</p>`;
             } else {
                 list.innerHTML = allPackages.map(p => {
                     let statusClass = "bg-blue-100 text-blue-700";
                     let rowClass = "row-route";
                     if(p.status === 'Devolvido') { statusClass = "bg-green-100 text-green-700"; rowClass = "row-done"; }
                     if(p.status === 'Falta') { statusClass = "bg-red-100 text-red-700"; rowClass = "row-missing"; }
-
                     return `<div class="p-4 flex justify-between items-center transition-all ${rowClass}">
-                        <div>
-                            <div class="flex items-center gap-2">
-                                <span class="font-mono font-bold text-slate-700 dark:text-gray-200">${p.id}</span>
-                                <span class="text-[8px] font-bold px-1.5 py-0.5 rounded ${statusClass}">${p.status.toUpperCase()}</span>
-                            </div>
-                            <p class="text-[9px] text-slate-400 mt-1 uppercase tracking-tighter">Por: ${p.user} • ${p.time}</p>
-                        </div>
+                        <div><div class="flex items-center gap-2"><span class="font-mono font-bold text-sm">${p.id}</span>
+                        <span class="text-[8px] font-bold px-1.5 py-0.5 rounded ${statusClass}">${p.status.toUpperCase()}</span></div>
+                        <p class="text-[9px] text-slate-400 mt-0.5 uppercase tracking-tighter">${p.time}</p></div>
                     </div>`;
                 }).join('');
             }
             document.getElementById('statOk').innerText = allPackages.filter(p => p.status === 'Devolvido').length;
             document.getElementById('statPending').innerText = allPackages.filter(p => p.status === 'Em rota').length;
             document.getElementById('statMissing').innerText = allPackages.filter(p => p.status === 'Falta').length;
-            document.getElementById('listCount').innerText = allPackages.length + " total";
+            document.getElementById('listCount').innerText = allPackages.length;
         }
 
-        // --- ZAP SEM ADD LOGIC ---
+        // Zap Sem Add Logic
         const phoneInput = document.getElementById('phoneInput');
-        const stopInput = document.getElementById('stopInput');
-        const messageInput = document.getElementById('messageInput');
-
         phoneInput.addEventListener('input', function (e) {
-            let value = e.target.value.replace(/\D/g, ''); 
-            if (value.length > 11) value = value.slice(0, 11);
-            if (value.length > 10) value = value.replace(/^(\d\d)(\d{5})(\d{4}).*/, "($1) $2-$3");
-            else if (value.length > 6) value = value.replace(/^(\d\d)(\d{4})(\d{0,4}).*/, "($1) $2-$3");
-            else if (value.length > 2) value = value.replace(/^(\d\d)(\d{0,5}).*/, "($1) $2");
-            else if (value.length > 0) value = value.replace(/^(\d*)/, "($1");
-            e.target.value = value;
+            let v = e.target.value.replace(/\D/g, ''); 
+            if (v.length > 11) v = v.slice(0, 11);
+            if (v.length > 10) v = v.replace(/^(\d\d)(\d{5})(\d{4}).*/, "($1) $2-$3");
+            else if (v.length > 6) v = v.replace(/^(\d\d)(\d{4})(\d{0,4}).*/, "($1) $2-$3");
+            else if (v.length > 2) v = v.replace(/^(\d\d)(\d{0,5}).*/, "($1) $2");
+            else if (v.length > 0) v = v.replace(/^(\d*)/, "($1");
+            e.target.value = v;
         });
-
-        function clearInputs() {
-            phoneInput.value = "";
-            stopInput.value = "";
-            stopInput.focus();
-        }
-
+        function clearInputs() { phoneInput.value = ""; document.getElementById('stopInput').value = ""; }
         async function pasteFromClipboard() {
             try {
                 const text = await navigator.clipboard.readText();
-                const cleanText = text.replace(/\D/g, '');
-                if (cleanText.length >= 10) {
-                    let numberToInput = cleanText;
-                    if (cleanText.length >= 12 && cleanText.startsWith('55')) numberToInput = cleanText.substring(2);
-                    phoneInput.value = numberToInput;
-                    phoneInput.dispatchEvent(new Event('input'));
-                } else {
-                    showToast("Área de transferência inválida.", "bg-yellow-500", "fa-exclamation-circle");
-                }
-            } catch (err) { showToast("Permissão negada.", "bg-red-500", "fa-lock"); }
+                const clean = text.replace(/\D/g, '');
+                if (clean.length >= 10) { phoneInput.value = clean.startsWith('55') ? clean.substring(2) : clean; phoneInput.dispatchEvent(new Event('input')); }
+            } catch (err) { }
         }
-
-        function openWhatsapp(phoneOverride = null, stopOverride = null) {
-            let rawNumber = phoneOverride || phoneInput.value.replace(/\D/g, '');
-            let stopNumber = stopOverride || stopInput.value;
-            let message = messageInput.value;
-
-            if (rawNumber.length < 10) {
-                showToast("Digite o telefone com DDD.", "bg-red-500", "fa-exclamation-triangle");
-                return;
-            }
-
-            const url = `https://api.whatsapp.com/send?phone=55${rawNumber}&text=${encodeURIComponent(message)}`;
-            if (!phoneOverride) saveToHistory(rawNumber, stopNumber);
-            window.open(url, '_blank');
+        function openWhatsapp(override = null) {
+            let n = override || phoneInput.value.replace(/\D/g, '');
+            if (n.length < 10) return showToast("Número inválido", "bg-red-500", "fa-exclamation");
+            let m = encodeURIComponent(document.getElementById('messageInput').value);
+            if (!override) saveToHistory(n, document.getElementById('stopInput').value);
+            window.open(`https://api.whatsapp.com/send?phone=55${n}&text=${m}`, '_blank');
         }
-
-        function saveToHistory(number, stop) {
-            let history = JSON.parse(localStorage.getItem('wa_history_v2') || '[]');
-            const today = new Date().toLocaleDateString('pt-BR');
-            history = history.filter(item => !(item.phone === number && item.date === today));
-            history.unshift({ phone: number, stop: stop, date: today, timestamp: Date.now() });
-            localStorage.setItem('wa_history_v2', JSON.stringify(history));
+        function saveToHistory(n, s) {
+            let h = JSON.parse(localStorage.getItem('wa_history_v2') || '[]');
+            const t = new Date().toLocaleDateString('pt-BR');
+            h = h.filter(i => !(i.phone === n && i.date === t));
+            h.unshift({ phone: n, stop: s, date: t, timestamp: Date.now() });
+            localStorage.setItem('wa_history_v2', JSON.stringify(h));
         }
-
-        function openHistoryModal() { 
-            document.getElementById('historyModal').classList.remove('hidden'); 
-            renderHistoryList(); 
-        }
-        function closeHistoryModal() { 
-            document.getElementById('historyModal').classList.add('hidden'); 
-        }
-
+        function openHistoryModal() { document.getElementById('historyModal').classList.remove('hidden'); renderHistoryList(); }
+        function closeHistoryModal() { document.getElementById('historyModal').classList.add('hidden'); }
         function renderHistoryList() {
             const list = document.getElementById('modalHistoryList');
-            const history = JSON.parse(localStorage.getItem('wa_history_v2') || '[]');
-            const today = new Date().toLocaleDateString('pt-BR');
-            const todaysCalls = history.filter(item => item.date === today);
-
-            if (todaysCalls.length === 0) {
-                list.innerHTML = `<div class="text-center py-8 text-gray-400 text-sm italic">Nenhum histórico hoje.</div>`;
-                return;
-            }
-            list.innerHTML = todaysCalls.map(item => {
-                const phone = item.phone.replace(/^(\d{2})(\d{5})(\d{4})/, "($1) $2-$3");
-                return `
-                    <div class="flex items-center justify-between bg-gray-50 dark:bg-zinc-800 p-3 rounded-xl border dark:border-zinc-700">
-                        <div class="flex items-center gap-2">
-                            <span class="bg-gray-200 dark:bg-zinc-700 px-2 py-0.5 rounded text-[10px] font-bold">P:${item.stop || '-'}</span>
-                            <span class="font-mono text-sm">${phone}</span>
-                        </div>
-                        <button onclick="openWhatsapp('${item.phone}')" class="bg-green-500 text-white p-2 rounded-lg text-xs font-bold"><i class="fab fa-whatsapp"></i></button>
-                    </div>
-                `;
-            }).join('');
+            const h = JSON.parse(localStorage.getItem('wa_history_v2') || '[]');
+            const t = new Date().toLocaleDateString('pt-BR');
+            const todays = h.filter(i => i.date === t);
+            if (todays.length === 0) { list.innerHTML = `<p class="text-center py-8 text-gray-400 text-sm">Vazio.</p>`; return; }
+            list.innerHTML = todays.map(i => `<div class="flex items-center justify-between bg-gray-50 dark:bg-zinc-800 p-3 rounded-xl border dark:border-zinc-700">
+                <div class="flex items-center gap-2"><span class="bg-gray-200 dark:bg-zinc-700 px-2 py-0.5 rounded text-[10px] font-bold">P:${i.stop || '-'}</span><span class="text-xs font-mono">${i.phone}</span></div>
+                <button onclick="openWhatsapp('${i.phone}')" class="text-green-500"><i class="fab fa-whatsapp"></i></button></div>`).join('');
         }
-
         function clearDailyHistory() {
-            if(confirm("Limpar histórico de HOJE?")) {
-                const today = new Date().toLocaleDateString('pt-BR');
-                let history = JSON.parse(localStorage.getItem('wa_history_v2') || '[]');
-                localStorage.setItem('wa_history_v2', JSON.stringify(history.filter(item => item.date !== today)));
-                renderHistoryList();
-            }
+            const t = new Date().toLocaleDateString('pt-BR');
+            let h = JSON.parse(localStorage.getItem('wa_history_v2') || '[]');
+            localStorage.setItem('wa_history_v2', JSON.stringify(h.filter(i => i.date !== t)));
+            renderHistoryList();
         }
-
         function saveHistoryPDF() {
-            const history = JSON.parse(localStorage.getItem('wa_history_v2') || '[]');
-            const today = new Date().toLocaleDateString('pt-BR');
-            const data = history.filter(item => item.date === today).reverse();
-            if (data.length === 0) return;
-            const { jsPDF } = window.jspdf;
-            const doc = new jsPDF();
-            doc.text(`Relatório de Contatos - ${today}`, 14, 20);
-            doc.autoTable({
-                head: [['Parada', 'Telefone', 'Horário']],
-                body: data.map(i => [i.stop || '-', i.phone, new Date(i.timestamp).toLocaleTimeString()]),
-                startY: 30
-            });
-            doc.save(`zap_contatos_${today}.pdf`);
+            const h = JSON.parse(localStorage.getItem('wa_history_v2') || '[]');
+            const t = new Date().toLocaleDateString('pt-BR');
+            const d = h.filter(i => i.date === t).reverse();
+            if (d.length === 0) return;
+            const { jsPDF } = window.jspdf; const doc = new jsPDF();
+            doc.text(`Contactos - ${t}`, 14, 20);
+            doc.autoTable({ head: [['P', 'Número', 'Hora']], body: d.map(i => [i.stop || '-', i.phone, new Date(i.timestamp).toLocaleTimeString()]), startY: 30 });
+            doc.save(`zap_${t}.pdf`);
         }
 
         // Utils Universais
-        function initAudio() { 
-            if(!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)(); 
-            if(audioCtx.state === 'suspended') audioCtx.resume();
+        function initAudio() { if(!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)(); if(audioCtx.state === 'suspended') audioCtx.resume(); }
+        function playBeep(s) {
+            if(!audioCtx) return; const o = audioCtx.createOscillator(); const g = audioCtx.createGain();
+            o.type = s ? 'square' : 'sawtooth'; o.frequency.setValueAtTime(s ? 2000 : 180, audioCtx.currentTime);
+            g.gain.setValueAtTime(0.3, audioCtx.currentTime); g.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
+            o.connect(g); g.connect(audioCtx.destination); o.start(); o.stop(audioCtx.currentTime + 0.1);
         }
-        function playBeep(success) {
-            if(!audioCtx) return;
-            const osc = audioCtx.createOscillator();
-            const g = audioCtx.createGain();
-            osc.type = success ? 'square' : 'sawtooth';
-            osc.frequency.setValueAtTime(success ? 2000 : 180, audioCtx.currentTime);
-            g.gain.setValueAtTime(0.3, audioCtx.currentTime);
-            g.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
-            osc.connect(g); g.connect(audioCtx.destination);
-            osc.start(); osc.stop(audioCtx.currentTime + 0.1);
-        }
-        function showToast(msg, color, icon) {
+        function showToast(m, c, i) {
             const t = document.getElementById('toast');
-            t.className = `fixed top-5 left-1/2 -translate-x-1/2 px-6 py-3 rounded-full shadow-2xl transition-all duration-300 z-[100] flex items-center gap-2 text-sm font-bold text-white ${color} opacity-100 translate-y-0`;
-            document.getElementById('toastMsg').innerText = msg;
-            document.getElementById('toastIcon').className = `fas ${icon}`;
+            t.className = `fixed top-5 left-1/2 -translate-x-1/2 px-6 py-3 rounded-full shadow-2xl transition-all duration-300 z-[100] flex items-center gap-2 text-sm font-bold text-white ${c} opacity-100 translate-y-0`;
+            document.getElementById('toastMsg').innerText = m; document.getElementById('toastIcon').className = `fas ${i}`;
             setTimeout(() => { t.classList.add('opacity-0'); t.classList.add('translate-y-[-20px]'); }, 2000);
         }
-        function handleManualInput() { 
-            const inp = document.getElementById('barcodeInput');
-            if(inp.value.trim()) processCode(inp.value.trim()); 
-            inp.value = ""; 
-        }
+        function handleManualInput() { const i = document.getElementById('barcodeInput'); if(i.value.trim()) processCode(i.value.trim()); i.value = ""; }
         document.getElementById('barcodeInput').addEventListener('keypress', (e) => { if(e.key === 'Enter') handleManualInput(); });
 
         async function toggleCamera() {
-            initAudio();
-            if(isCameraActive) { stopCamera(); return; }
-            
-            document.getElementById('cameraContainer').classList.remove('hidden');
-            document.getElementById('camBtnText').innerText = "Parar Câmera";
-            
+            initAudio(); if(isCameraActive) { stopCamera(); return; }
+            document.getElementById('cameraContainer').classList.remove('hidden'); document.getElementById('camBtnText').innerText = "Parar";
             if(!codeReader) codeReader = new ZXing.BrowserMultiFormatReader();
             isCameraActive = true;
-            
-            // Configurações avançadas de vídeo
-            const constraints = {
-                video: { 
-                    facingMode: { ideal: "environment" },
-                    width: { ideal: 1280 },
-                    height: { ideal: 720 }
-                }
-            };
-
             try {
-                await codeReader.decodeFromConstraints(constraints, 'readerVideo', (res, err) => {
-                    if(res) processCode(res.getText());
-                });
-
-                // Lógica de Zoom Automático
+                await codeReader.decodeFromConstraints({ video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } } }, 'readerVideo', (res) => { if(res) processCode(res.getText()); });
                 setTimeout(() => {
-                    const videoEl = document.getElementById('readerVideo');
-                    if (videoEl && videoEl.srcObject) {
-                        const track = videoEl.srcObject.getVideoTracks()[0];
-                        const capabilities = track.getCapabilities();
-                        // Se a câmera suportar zoom, aplicamos 2x (ou o máximo permitido até 2x)
-                        if (capabilities && capabilities.zoom) {
-                            const zoomValue = Math.min(2.0, capabilities.zoom.max);
-                            track.applyConstraints({
-                                advanced: [{ zoom: zoomValue }]
-                            }).catch(e => console.warn("Zoom não pôde ser aplicado:", e));
-                        }
+                    const v = document.getElementById('readerVideo');
+                    if (v && v.srcObject) {
+                        const t = v.srcObject.getVideoTracks()[0];
+                        const c = t.getCapabilities();
+                        if (c && c.zoom) t.applyConstraints({ advanced: [{ zoom: Math.min(2.0, c.zoom.max) }] });
                     }
-                }, 1000); // Aguarda a inicialização do stream
-
-            } catch (err) {
-                console.error("Erro na câmera:", err);
-                stopCamera();
-                showToast("Erro ao abrir câmera", "bg-red-500", "fa-video-slash");
-            }
+                }, 1000);
+            } catch (err) { stopCamera(); showToast("Erro câmera", "bg-red-500", "fa-video-slash"); }
         }
-        
-        function stopCamera() { 
-            if(codeReader) codeReader.reset(); 
-            isCameraActive = false; 
-            document.getElementById('cameraContainer').classList.add('hidden'); 
-            document.getElementById('camBtnText').innerText = "Scanner Câmera";
-        }
+        function stopCamera() { if(codeReader) codeReader.reset(); isCameraActive = false; document.getElementById('cameraContainer').classList.add('hidden'); document.getElementById('camBtnText').innerText = "Scanner Câmera"; }
     </script>
 </body>
 </html>
