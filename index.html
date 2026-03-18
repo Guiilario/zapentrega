@@ -3,23 +3,30 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Multiferramentas Entregas - Cloud</title>
+    <title>Multiferramentas Entregas - Cloud Pro</title>
     
+    <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
-        tailwind.config = { darkMode: 'class' }
+        tailwind.config = {
+            darkMode: 'class',
+        }
     </script>
     
+    <!-- Font Awesome -->
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     
+    <!-- Bibliotecas de PDF e ZXing -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
     <script type="text/javascript" src="https://unpkg.com/@zxing/library@latest/umd/index.min.js"></script>
 
+    <!-- FIREBASE INTEGRATION (MODULAR SDK) -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
         import { getFirestore, collection, addDoc, serverTimestamp, query, onSnapshot, orderBy, updateDoc, doc, getDocs, where } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
+        // Suas credenciais fornecidas
         const firebaseConfig = {
             apiKey: "AIzaSyC05tYoKOHOBf6pNhhmMqgSap1g3iB4Im4",
             authDomain: "logistica-pacotes.firebaseapp.com",
@@ -32,7 +39,7 @@
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
 
-        // Função Global para salvar novo bip
+        // Função para Salvar Nova Saída
         window.saveToFirebase = async (code, user, status) => {
             try {
                 await addDoc(collection(db, "bipados"), {
@@ -42,22 +49,31 @@
                     timestamp: serverTimestamp()
                 });
             } catch (e) {
-                console.error("Erro Firebase:", e);
-                showToast("Erro ao salvar na nuvem", "bg-red-500");
+                console.error("Erro ao salvar no Firebase:", e);
+                showToast("Erro de sincronização", "bg-red-500", "fa-cloud-slash");
             }
         };
 
-        // Função Global para atualizar status (Devolução)
+        // Função para Atualizar Status (Devolução)
         window.updateStatusFirebase = async (code, newStatus) => {
-            const q = query(collection(db, "bipados"), where("id", "==", code));
-            const querySnapshot = await getDocs(q);
-            querySnapshot.forEach(async (document) => {
-                const docRef = doc(db, "bipados", document.id);
-                await updateDoc(docRef, { status: newStatus });
-            });
+            try {
+                const q = query(collection(db, "bipados"), where("id", "==", code));
+                const querySnapshot = await getDocs(q);
+                
+                // Atualiza todos os documentos com esse código (normalmente apenas um)
+                querySnapshot.forEach(async (document) => {
+                    const docRef = doc(db, "bipados", document.id);
+                    await updateDoc(docRef, { 
+                        status: newStatus,
+                        updateTime: serverTimestamp()
+                    });
+                });
+            } catch (e) {
+                console.error("Erro ao atualizar no Firebase:", e);
+            }
         };
 
-        // Listener em Tempo Real
+        // Listener em Tempo Real para manter a lista atualizada
         const q = query(collection(db, "bipados"), orderBy("timestamp", "desc"));
         onSnapshot(q, (snapshot) => {
             allPackages = [];
@@ -67,6 +83,8 @@
                 allPackages.push({ ...data, time: time, firebaseId: doc.id });
             });
             updateScanUI();
+        }, (error) => {
+            console.error("Erro no listener:", error);
         });
     </script>
 
@@ -75,19 +93,21 @@
         body { font-family: 'Inter', sans-serif; -webkit-tap-highlight-color: transparent; }
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .btn-pulse:active { transform: scale(0.95); }
-        .row-done { background-color: rgba(34, 197, 94, 0.1); border-left: 4px solid #22c55e; }
-        .row-pending { background-color: rgba(239, 68, 68, 0.1); border-left: 4px solid #ef4444; }
+        .row-done { background-color: rgba(34, 197, 94, 0.1) !important; border-left: 4px solid #22c55e !important; }
+        .row-pending { background-color: rgba(239, 68, 68, 0.05) !important; border-left: 4px solid #64748b !important; }
         @keyframes modalIn { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
         .modal-animate { animation: modalIn 0.2s ease-out forwards; }
     </style>
 </head>
 <body class="bg-gray-100 dark:bg-black text-gray-800 dark:text-gray-100 min-h-screen flex flex-col transition-colors duration-300">
 
+    <!-- Navbar -->
     <div class="fixed top-0 left-0 right-0 h-16 z-40 pointer-events-none">
         <button onclick="toggleMenu()" class="absolute top-4 left-4 w-10 h-10 rounded-full bg-white dark:bg-zinc-800 shadow-lg flex items-center justify-center text-gray-600 dark:text-gray-200 pointer-events-auto ring-1 ring-gray-200 dark:ring-gray-600"><i class="fas fa-bars"></i></button>
         <button onclick="toggleTheme()" class="absolute top-4 right-4 w-10 h-10 rounded-full bg-white dark:bg-zinc-800 shadow-lg flex items-center justify-center text-gray-600 dark:text-gray-200 pointer-events-auto ring-1 ring-gray-200 dark:ring-gray-600"><i id="themeIcon" class="fas fa-sun"></i></button>
     </div>
 
+    <!-- Sidebar -->
     <div id="menuOverlay" class="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 hidden opacity-0 transition-opacity duration-300" onclick="toggleMenu()"></div>
     <div id="sideMenu" class="fixed inset-y-0 left-0 w-64 bg-white dark:bg-zinc-900 shadow-2xl transform -translate-x-full transition-transform duration-300 ease-in-out z-50 flex flex-col border-r border-gray-200 dark:border-zinc-700">
         <div class="p-5 border-b border-gray-200 dark:border-zinc-700 flex justify-between items-center">
@@ -95,114 +115,129 @@
             <button onclick="toggleMenu()"><i class="fas fa-times text-xl text-gray-400"></i></button>
         </div>
         <nav class="p-4 flex flex-col gap-2">
-            <a href="#" onclick="switchView('zap'); toggleMenu();" class="flex items-center gap-3 p-3 rounded-xl hover:bg-gray-100 dark:hover:bg-zinc-800">
-                <div class="w-8 h-8 rounded-lg bg-green-100 dark:bg-green-900/30 flex items-center justify-center text-green-600"><i class="fab fa-whatsapp"></i></div> ZAP SEM ADD
+            <a href="#" onclick="switchView('zap'); toggleMenu();" class="flex items-center gap-3 p-3 rounded-xl hover:bg-gray-100 dark:hover:bg-zinc-800 transition-colors">
+                <div class="w-8 h-8 rounded-lg bg-green-100 dark:bg-green-900/30 flex items-center justify-center text-green-600"><i class="fab fa-whatsapp"></i></div> Zap Entregas
             </a>
-            <a href="#" onclick="switchView('scan'); toggleMenu();" class="flex items-center gap-3 p-3 rounded-xl hover:bg-gray-100 dark:hover:bg-zinc-800">
-                <div class="w-8 h-8 rounded-lg bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-600"><i class="fas fa-barcode"></i></div> SCAN PCT (Cloud)
+            <a href="#" onclick="switchView('scan'); toggleMenu();" class="flex items-center gap-3 p-3 rounded-xl hover:bg-gray-100 dark:hover:bg-zinc-800 transition-colors">
+                <div class="w-8 h-8 rounded-lg bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-600"><i class="fas fa-barcode"></i></div> Logística Cloud
             </a>
         </nav>
     </div>
 
+    <!-- VIEW: ZAP SEM ADD -->
     <main id="view-zap" class="w-full max-w-md mx-auto p-6 pt-20 flex flex-col justify-center min-h-screen pb-10">
-         <div class="text-center mb-8">
-            <div class="inline-flex items-center justify-center w-20 h-20 rounded-full bg-green-100 dark:bg-green-900/30 mb-4 shadow-lg">
-                <i class="fab fa-whatsapp text-5xl text-green-600"></i>
+        <div class="text-center mb-8">
+            <div class="inline-flex items-center justify-center w-20 h-20 rounded-full bg-green-100 dark:bg-green-900/30 mb-4 shadow-lg ring-1 ring-green-500/30">
+                <i class="fab fa-whatsapp text-5xl text-green-600 dark:text-green-400"></i>
             </div>
             <h1 class="text-2xl font-bold">Zap Entregas</h1>
+            <p class="text-xs text-gray-500 mt-1">Contato rápido sem salvar número</p>
         </div>
         <div class="bg-white dark:bg-zinc-900 p-6 rounded-2xl shadow-xl border border-gray-200 dark:border-zinc-700">
             <div class="flex gap-3 mb-4">
-                <input type="number" id="stopInput" class="w-24 bg-gray-100 dark:bg-zinc-800 p-4 rounded-xl text-center font-bold" placeholder="00">
-                <input type="tel" id="phoneInput" class="flex-1 bg-gray-100 dark:bg-zinc-800 p-4 rounded-xl text-center font-mono" placeholder="(11) 99999-9999">
+                <input type="number" id="stopInput" class="w-24 bg-gray-100 dark:bg-zinc-800 p-4 rounded-xl text-center font-bold text-lg outline-none focus:ring-2 focus:ring-green-500" placeholder="00">
+                <input type="tel" id="phoneInput" class="flex-1 bg-gray-100 dark:bg-zinc-800 p-4 rounded-xl text-center font-mono text-lg outline-none focus:ring-2 focus:ring-green-500" placeholder="(11) 99999-9999">
             </div>
-            <textarea id="messageInput" class="w-full bg-gray-100 dark:bg-zinc-800 p-4 rounded-xl h-24 mb-4 resize-none">Olá. Entrega do Mercado Livre.</textarea>
-            <button onclick="openWhatsapp()" class="w-full bg-green-600 text-white py-4 rounded-xl font-bold btn-pulse">Iniciar Conversa</button>
+            <textarea id="messageInput" class="w-full bg-gray-100 dark:bg-zinc-800 p-4 rounded-xl h-24 mb-4 resize-none text-sm outline-none focus:ring-2 focus:ring-green-500">Olá. Entrega do Mercado Livre.</textarea>
+            <button onclick="openWhatsapp()" class="w-full bg-green-600 hover:bg-green-500 text-white py-4 rounded-xl font-bold shadow-lg shadow-green-900/20 transition-all btn-pulse">Iniciar Conversa</button>
         </div>
     </main>
 
+    <!-- VIEW: SCAN PCT CLOUD -->
     <main id="view-scan" class="w-full max-w-2xl mx-auto p-4 pt-24 hidden pb-20">
         <header class="flex justify-between items-center mb-6 bg-white dark:bg-zinc-900 p-6 rounded-2xl shadow-sm border border-gray-200 dark:border-zinc-700">
             <div>
                 <h1 class="text-2xl font-bold">Logística <span class="text-blue-600">Cloud</span></h1>
-                <p id="modeIndicator" class="text-xs font-bold uppercase text-slate-400 mt-1">Modo: Registro de Saída</p>
+                <p id="modeIndicator" class="text-xs font-bold uppercase tracking-widest text-slate-400 mt-1">Modo: Registro de Saída</p>
             </div>
-            <button onclick="resetEverything()" class="text-slate-400 hover:text-red-500"><i class="fas fa-sign-out-alt text-2xl"></i></button>
+            <button onclick="resetEverything()" class="p-2 text-slate-400 hover:text-red-500 transition-colors"><i class="fas fa-power-off text-2xl"></i></button>
         </header>
 
-        <div id="userSection" class="bg-blue-600 rounded-2xl p-6 shadow-lg text-white mb-6 hidden">
+        <!-- Seção do Entregador -->
+        <div id="userSection" class="bg-blue-600 rounded-2xl p-6 shadow-lg text-white mb-6 hidden transition-all">
             <div class="flex justify-between items-start mb-4">
                 <div>
-                    <span class="text-blue-100 text-xs font-bold">ENTREGADOR ATIVO:</span>
+                    <span class="text-blue-100 text-[10px] font-bold uppercase tracking-widest">Sessão Ativa:</span>
                     <h2 id="currentUserName" class="text-2xl font-bold italic">Nenhum</h2>
                 </div>
-                <button onclick="finalizeBatch()" class="bg-white text-blue-600 px-4 py-2 rounded-xl font-bold text-sm">Sair</button>
+                <button onclick="finalizeBatch()" class="bg-white/20 hover:bg-white/30 text-white px-4 py-2 rounded-xl font-bold text-sm transition-all border border-white/20">Finalizar</button>
             </div>
             <div class="flex gap-2">
-                <input type="text" id="barcodeInput" placeholder="Bipar código..." class="flex-1 p-3 bg-black/20 rounded-xl text-white outline-none placeholder-blue-100">
-                <button onclick="handleManualInput()" class="bg-white/20 p-3 rounded-xl"><i class="fas fa-arrow-right"></i></button>
+                <input type="text" id="barcodeInput" placeholder="Bipar código de barras..." class="flex-1 p-4 bg-black/20 border-none rounded-xl text-white placeholder-blue-100 focus:ring-2 focus:ring-white outline-none font-mono">
+                <button onclick="handleManualInput()" class="bg-white text-blue-600 w-14 rounded-xl flex items-center justify-center shadow-md active:scale-90 transition-transform"><i class="fas fa-arrow-right"></i></button>
             </div>
-            <button onclick="toggleCamera()" id="camBtn" class="mt-4 w-full py-3 bg-black/20 rounded-xl font-semibold flex items-center justify-center gap-2">
-                <i class="fas fa-camera"></i> <span id="camBtnText">Ativar Câmera</span>
+            <button onclick="toggleCamera()" id="camBtn" class="mt-4 w-full py-4 bg-black/20 rounded-xl font-bold flex items-center justify-center gap-3 hover:bg-black/30 transition-all border border-white/10">
+                <i class="fas fa-camera"></i> <span id="camBtnText">Ativar Câmera Scanner</span>
             </button>
         </div>
 
-        <div id="startSection" class="bg-white dark:bg-zinc-900 rounded-2xl p-8 border border-gray-200 dark:border-zinc-700 text-center">
-            <input type="text" id="newUserName" placeholder="Nome do Entregador" class="w-full p-4 mb-4 bg-gray-50 dark:bg-zinc-800 rounded-2xl text-center text-lg outline-none border border-gray-200 dark:border-zinc-700">
-            <div class="flex gap-2">
-                <button onclick="startNewBatch('out')" class="flex-1 py-4 bg-blue-600 text-white rounded-2xl font-bold">Saída de Lote</button>
-                <button onclick="startNewBatch('return')" class="flex-1 py-4 bg-green-600 text-white rounded-2xl font-bold">Conferir/Devolver</button>
+        <!-- Seção Inicial -->
+        <div id="startSection" class="bg-white dark:bg-zinc-900 rounded-2xl p-8 shadow-sm border border-gray-200 dark:border-zinc-700 text-center transition-colors">
+            <div class="mb-4 bg-blue-50 dark:bg-blue-900/20 w-16 h-16 rounded-full flex items-center justify-center mx-auto text-blue-600"><i class="fas fa-truck-loading text-2xl"></i></div>
+            <h3 class="text-xl font-bold mb-2">Iniciar Operação</h3>
+            <p class="text-slate-500 text-sm mb-6">Identifique-se para começar a bipar os pacotes.</p>
+            <input type="text" id="newUserName" placeholder="Nome do Entregador" class="w-full p-4 mb-4 bg-gray-50 dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 rounded-2xl text-center text-lg outline-none focus:ring-2 focus:ring-blue-500 transition-all">
+            <div class="flex gap-3">
+                <button onclick="startNewBatch('out')" class="flex-1 py-4 bg-blue-600 text-white rounded-2xl font-bold shadow-lg hover:bg-blue-700 transition-all">Saída de Lote</button>
+                <button onclick="startNewBatch('return')" class="flex-1 py-4 bg-green-600 text-white rounded-2xl font-bold shadow-lg hover:bg-green-700 transition-all">Devolução</button>
             </div>
         </div>
 
-        <div id="cameraContainer" class="hidden mb-6 mx-auto w-full max-w-[300px] aspect-square bg-black rounded-2xl overflow-hidden relative">
-            <video id="readerVideo" class="w-full h-full object-cover" autoplay muted playsinline></video>
-            <div class="absolute inset-0 border-[30px] border-black/50 z-10 flex items-center justify-center">
-                <div class="w-full h-1 bg-green-500 animate-pulse"></div>
+        <!-- Câmera Scanner -->
+        <div id="cameraContainer" class="hidden mb-6 mx-auto w-full max-w-[300px] aspect-square bg-black rounded-2xl overflow-hidden shadow-2xl relative border-4 border-blue-500/30">
+            <video id="readerVideo" class="w-full h-full object-cover scale-110" autoplay muted playsinline></video>
+            <div class="absolute inset-0 pointer-events-none flex items-center justify-center">
+                <div class="w-4/5 h-0.5 bg-green-500 shadow-[0_0_15px_rgba(34,197,94,1)] animate-pulse"></div>
             </div>
-            <button onclick="stopCamera()" class="absolute top-2 right-2 z-20 bg-red-500 text-white w-10 h-10 rounded-full"><i class="fas fa-times"></i></button>
+            <button onclick="stopCamera()" class="absolute top-3 right-3 z-20 bg-red-500 text-white w-10 h-10 rounded-full flex items-center justify-center shadow-lg"><i class="fas fa-times"></i></button>
         </div>
 
-        <div class="grid grid-cols-3 gap-3 my-6 text-center">
-            <div class="bg-white dark:bg-zinc-900 p-4 rounded-2xl border border-gray-200 dark:border-zinc-700">
-                <span class="text-[10px] font-bold text-slate-400 uppercase">Total</span>
+        <!-- Estatísticas -->
+        <div class="grid grid-cols-3 gap-3 my-6">
+            <div class="bg-white dark:bg-zinc-900 p-4 rounded-2xl border border-gray-200 dark:border-zinc-700 shadow-sm text-center">
+                <span class="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">Na Nuvem</span>
                 <p id="statTotal" class="text-xl font-bold">0</p>
             </div>
-            <div class="bg-white dark:bg-zinc-900 p-4 rounded-2xl border border-gray-200 dark:border-zinc-700">
-                <span class="text-[10px] font-bold text-slate-400 uppercase">OK</span>
+            <div class="bg-white dark:bg-zinc-900 p-4 rounded-2xl border border-gray-200 dark:border-zinc-700 shadow-sm text-center">
+                <span class="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">Entregue</span>
                 <p id="statOk" class="text-xl font-bold text-green-500">0</p>
             </div>
-            <div class="bg-white dark:bg-zinc-900 p-4 rounded-2xl border border-gray-200 dark:border-zinc-700">
-                <span class="text-[10px] font-bold text-slate-400 uppercase">Falta</span>
-                <p id="statPending" class="text-xl font-bold text-red-500">0</p>
+            <div class="bg-white dark:bg-zinc-900 p-4 rounded-2xl border border-gray-200 dark:border-zinc-700 shadow-sm text-center">
+                <span class="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">Em Rota</span>
+                <p id="statPending" class="text-xl font-bold text-blue-500">0</p>
             </div>
         </div>
 
-        <div class="bg-white dark:bg-zinc-900 rounded-2xl shadow-sm border border-gray-200 dark:border-zinc-700 overflow-hidden">
-            <div class="p-4 bg-slate-50 dark:bg-zinc-800 border-b border-gray-200 dark:border-zinc-700 flex justify-between items-center font-bold text-xs">
-                <span class="text-slate-500 uppercase">Registros Cloud</span>
-                <span id="listCount" class="text-blue-600">0 itens</span>
+        <!-- Lista de Pacotes (Cloud) -->
+        <div class="bg-white dark:bg-zinc-900 rounded-2xl shadow-sm border border-gray-200 dark:border-zinc-700 overflow-hidden transition-colors">
+            <div class="p-4 bg-slate-50 dark:bg-zinc-800 border-b border-gray-200 dark:border-zinc-700 flex justify-between items-center">
+                <span class="text-xs font-bold text-slate-500 uppercase tracking-widest">Base de Dados Sincronizada</span>
+                <span id="listCount" class="text-[10px] font-bold text-blue-600 bg-blue-50 dark:bg-blue-900/30 px-2 py-1 rounded">0 itens</span>
             </div>
-            <div id="packageList" class="divide-y divide-gray-100 dark:divide-zinc-800 max-h-[400px] overflow-y-auto">
-                <p class="p-12 text-center text-slate-400 italic">Carregando dados da nuvem...</p>
+            <div id="packageList" class="divide-y divide-gray-100 dark:divide-zinc-800 max-h-[500px] overflow-y-auto">
+                <div class="p-12 text-center text-slate-400 italic flex flex-col items-center gap-3">
+                    <i class="fas fa-cloud-download-alt text-2xl animate-bounce"></i>
+                    Aguardando conexão com Firebase...
+                </div>
             </div>
         </div>
     </main>
 
-    <div id="toast" class="fixed top-5 left-1/2 -translate-x-1/2 px-6 py-3 rounded-full shadow-2xl transition-opacity duration-300 opacity-0 z-[100] flex items-center gap-2 text-sm font-bold text-white">
+    <!-- Notificações Toast -->
+    <div id="toast" class="fixed top-5 left-1/2 -translate-x-1/2 px-6 py-3 rounded-full shadow-2xl transition-all duration-300 opacity-0 z-[100] flex items-center gap-2 text-sm font-bold text-white pointer-events-none translate-y-[-20px]">
         <i id="toastIcon"></i> <span id="toastMsg"></span>
     </div>
 
     <script>
-        // ESTADOS GLOBAIS
-        let allPackages = [];
+        // --- ESTADOS GLOBAIS ---
+        let allPackages = []; // Agora alimentado pelo Firebase
         let currentBatchUser = null;
         let isConferenceMode = false;
         let codeReader = null;
         let isCameraActive = false;
         let audioCtx = null;
 
-        // TEMA E MENU
+        // --- TEMA E NAVEGAÇÃO ---
         function toggleTheme() {
             const isDark = document.documentElement.classList.toggle('dark');
             localStorage.theme = isDark ? 'dark' : 'light';
@@ -211,8 +246,8 @@
         function toggleMenu() {
             const side = document.getElementById('sideMenu');
             const over = document.getElementById('menuOverlay');
-            const isOpen = side.classList.contains('-translate-x-full');
-            if(isOpen) {
+            const isOpen = !side.classList.contains('-translate-x-full');
+            if(!isOpen) {
                 over.classList.remove('hidden');
                 setTimeout(() => { over.classList.remove('opacity-0'); side.classList.remove('-translate-x-full'); }, 10);
             } else {
@@ -225,21 +260,31 @@
             document.getElementById('view-zap').classList.add('hidden');
             document.getElementById('view-scan').classList.add('hidden');
             document.getElementById('view-' + v).classList.remove('hidden');
-            stopCamera();
+            if(v !== 'scan') stopCamera();
         }
 
-        // SCAN LOGIC
+        // --- LÓGICA DE NEGÓCIO (FIREBASE + SCANNER) ---
+
         function startNewBatch(mode) {
-            const name = document.getElementById('newUserName').value.trim();
-            if(!name) return showToast("Digite o nome", "bg-red-500");
+            const nameInput = document.getElementById('newUserName');
+            const name = nameInput.value.trim();
+            if(!name) return showToast("Digite seu nome para começar", "bg-red-500", "fa-user-slash");
+            
+            initAudio();
             currentBatchUser = name;
-            isConferenceMode = mode === 'return';
+            isConferenceMode = (mode === 'return');
+            
             document.getElementById('currentUserName').innerText = name;
-            document.getElementById('modeIndicator').innerText = isConferenceMode ? "Modo: Devolução" : "Modo: Saída";
-            document.getElementById('userSection').className = isConferenceMode ? "bg-green-600 rounded-2xl p-6 shadow-lg text-white mb-6" : "bg-blue-600 rounded-2xl p-6 shadow-lg text-white mb-6";
+            document.getElementById('modeIndicator').innerText = isConferenceMode ? "Modo: Devolução / Recebimento" : "Modo: Registro de Saída";
+            
+            const userSection = document.getElementById('userSection');
+            userSection.className = isConferenceMode ? "bg-green-600 rounded-2xl p-6 shadow-lg text-white mb-6" : "bg-blue-600 rounded-2xl p-6 shadow-lg text-white mb-6";
+            
             document.getElementById('startSection').classList.add('hidden');
-            document.getElementById('userSection').classList.remove('hidden');
+            userSection.classList.remove('hidden');
             document.getElementById('barcodeInput').focus();
+            
+            showToast("Sessão iniciada!", isConferenceMode ? "bg-green-600" : "bg-blue-600", "fa-check");
         }
 
         async function processCode(code) {
@@ -247,29 +292,36 @@
             initAudio();
             
             if(isConferenceMode) {
+                // MODO DEVOLUÇÃO: Só aceita pacotes que JÁ EXISTEM no banco (Saída)
                 const pkg = allPackages.find(p => p.id === code);
+                
                 if(pkg) {
                     if(pkg.status === 'done') {
-                        showToast("Já devolvido!", "bg-yellow-500");
+                        showToast("Este item já foi devolvido!", "bg-yellow-500", "fa-info-circle");
                         playBeep(false);
                     } else {
+                        // Pacote existe e está pendente: Confirma devolução
                         await window.updateStatusFirebase(code, 'done');
-                        showToast("Devolução OK", "bg-green-600");
+                        showToast("Devolução Confirmada: " + code, "bg-green-600", "fa-check-double");
                         playBeep(true);
+                        if (navigator.vibrate) navigator.vibrate(100);
                     }
                 } else {
-                    await window.saveToFirebase(code, "EXTRA-" + currentBatchUser, 'extra');
-                    showToast("Pacote Extra!", "bg-purple-600");
-                    playBeep(true);
+                    // BLOQUEIO: Pacote não reconhecido (não passou pela saída)
+                    showToast("ERRO: Pacote não fornecido na saída!", "bg-red-600", "fa-times-circle");
+                    playBeep(false);
+                    if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
                 }
             } else {
+                // MODO SAÍDA: Regista novo pacote no Firebase
                 if(allPackages.some(p => p.id === code)) {
-                    showToast("Já registrado!", "bg-yellow-500");
+                    showToast("Item já registado na saída!", "bg-yellow-500", "fa-info-circle");
                     playBeep(false);
                 } else {
                     await window.saveToFirebase(code, currentBatchUser, 'out');
-                    showToast("Salvo na Nuvem", "bg-blue-600");
+                    showToast("Bipado e Sincronizado!", "bg-blue-600", "fa-cloud-upload-alt");
                     playBeep(true);
+                    if (navigator.vibrate) navigator.vibrate(50);
                 }
             }
         }
@@ -277,75 +329,148 @@
         function updateScanUI() {
             const list = document.getElementById('packageList');
             if(allPackages.length === 0) {
-                list.innerHTML = `<p class="p-12 text-center text-slate-400 italic">Nenhum registro encontrado.</p>`;
+                list.innerHTML = `<p class="p-12 text-center text-slate-400 italic">Nenhum registo encontrado na nuvem.</p>`;
             } else {
                 list.innerHTML = allPackages.map(p => {
-                    let statusColor = "bg-slate-100 text-slate-500";
-                    let rowColor = "";
-                    if(p.status === 'done') { statusColor = "bg-green-100 text-green-700"; rowColor = "row-done"; }
-                    if(p.status === 'extra') { statusColor = "bg-purple-100 text-purple-700"; }
-                    return `<div class="p-4 flex justify-between items-center border-b dark:border-zinc-800 ${rowColor}">
-                        <div>
-                            <div class="flex items-center gap-2">
-                                <span class="font-mono font-bold">${p.id}</span>
-                                <span class="text-[9px] font-bold px-1 rounded ${statusColor}">${p.status.toUpperCase()}</span>
+                    let statusLabel = "EM ROTA";
+                    let statusClass = "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400";
+                    let rowClass = "row-pending";
+                    
+                    if(p.status === 'done') {
+                        statusLabel = "DEVOLVIDO";
+                        statusClass = "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400";
+                        rowClass = "row-done";
+                    }
+
+                    return `
+                        <div class="p-4 flex justify-between items-center transition-all ${rowClass}">
+                            <div>
+                                <div class="flex items-center gap-2">
+                                    <span class="font-mono font-bold text-slate-700 dark:text-gray-200">${p.id}</span>
+                                    <span class="text-[9px] font-bold px-1.5 py-0.5 rounded ${statusClass}">${statusLabel}</span>
+                                </div>
+                                <p class="text-[10px] text-slate-400 dark:text-slate-500 mt-1 uppercase tracking-tight">Responsável: <span class="font-bold">${p.user}</span> • ${p.time}</p>
                             </div>
-                            <p class="text-[10px] text-slate-400">Responsável: ${p.user} • ${p.time}</p>
+                            <div class="text-slate-300 dark:text-zinc-700"><i class="fas fa-check-circle"></i></div>
                         </div>
-                    </div>`;
+                    `;
                 }).join('');
             }
+            
+            // Stats
             document.getElementById('statTotal').innerText = allPackages.length;
             document.getElementById('statOk').innerText = allPackages.filter(p => p.status === 'done').length;
             document.getElementById('statPending').innerText = allPackages.filter(p => p.status === 'out').length;
             document.getElementById('listCount').innerText = allPackages.length + " itens";
         }
 
-        // Funções auxiliares (Beep, Camera, Toasts)
-        function initAudio() { if(!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)(); }
-        function playBeep(s) {
+        // --- UTILITÁRIOS ---
+
+        function initAudio() { 
+            if(!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)(); 
+            if(audioCtx.state === 'suspended') audioCtx.resume();
+        }
+
+        function playBeep(success) {
             if(!audioCtx) return;
             const osc = audioCtx.createOscillator();
             const g = audioCtx.createGain();
-            osc.type = s ? 'square' : 'sawtooth';
-            osc.frequency.setValueAtTime(s ? 2000 : 200, audioCtx.currentTime);
-            g.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.2);
+            osc.type = success ? 'square' : 'sawtooth';
+            osc.frequency.setValueAtTime(success ? 2000 : 180, audioCtx.currentTime);
+            g.gain.setValueAtTime(0.5, audioCtx.currentTime);
+            g.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + (success ? 0.1 : 0.4));
             osc.connect(g); g.connect(audioCtx.destination);
-            osc.start(); osc.stop(audioCtx.currentTime + 0.2);
+            osc.start(); osc.stop(audioCtx.currentTime + (success ? 0.1 : 0.4));
         }
-        function showToast(m, c) {
+
+        function showToast(msg, color, icon) {
             const t = document.getElementById('toast');
-            t.className = `fixed top-5 left-1/2 -translate-x-1/2 px-6 py-3 rounded-full shadow-2xl transition-opacity duration-300 opacity-100 z-[100] flex items-center gap-2 text-sm font-bold text-white ${c}`;
-            document.getElementById('toastMsg').innerText = m;
-            setTimeout(() => t.classList.add('opacity-0'), 2000);
+            t.className = `fixed top-5 left-1/2 -translate-x-1/2 px-6 py-3 rounded-full shadow-2xl transition-all duration-300 z-[100] flex items-center gap-2 text-sm font-bold text-white ${color} opacity-100 translate-y-0`;
+            document.getElementById('toastMsg').innerText = msg;
+            document.getElementById('toastIcon').className = `fas ${icon}`;
+            setTimeout(() => {
+                t.classList.add('opacity-0');
+                t.classList.add('translate-y-[-20px]');
+            }, 2500);
         }
+
         function handleManualInput() { 
             const inp = document.getElementById('barcodeInput');
-            processCode(inp.value); inp.value = ""; inp.focus(); 
+            const code = inp.value.trim();
+            if(code) processCode(code); 
+            inp.value = ""; 
+            inp.focus(); 
         }
+
+        document.getElementById('barcodeInput').addEventListener('keypress', (e) => { if(e.key === 'Enter') handleManualInput(); });
+
         async function toggleCamera() {
+            initAudio();
             if(isCameraActive) { stopCamera(); return; }
+            
             document.getElementById('cameraContainer').classList.remove('hidden');
+            document.getElementById('camBtnText').innerText = "Parar Câmera";
+            
             if(!codeReader) codeReader = new ZXing.BrowserMultiFormatReader();
             isCameraActive = true;
-            codeReader.decodeFromVideoDevice(null, 'readerVideo', (res) => {
-                if(res) processCode(res.getText());
+            
+            const constraints = {
+                video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 }, height: { ideal: 720 } }
+            };
+
+            codeReader.decodeFromConstraints(constraints, 'readerVideo', (res) => {
+                if(res) {
+                    processCode(res.getText());
+                }
+            }).catch(err => {
+                console.error(err);
+                stopCamera();
+                showToast("Erro ao abrir câmera", "bg-red-500", "fa-video-slash");
             });
         }
+
         function stopCamera() {
             if(codeReader) codeReader.reset();
             isCameraActive = false;
             document.getElementById('cameraContainer').classList.add('hidden');
+            document.getElementById('camBtnText').innerText = "Ativar Câmera Scanner";
         }
-        function finalizeBatch() { currentBatchUser = null; document.getElementById('userSection').classList.add('hidden'); document.getElementById('startSection').classList.remove('hidden'); stopCamera(); }
-        
-        // ZAP LOGIC
+
+        function finalizeBatch() {
+            if(confirm("Deseja encerrar a sessão de " + currentBatchUser + "?")) {
+                currentBatchUser = null;
+                document.getElementById('userSection').classList.add('hidden');
+                document.getElementById('startSection').classList.remove('hidden');
+                stopCamera();
+                showToast("Sessão encerrada", "bg-slate-800", "fa-sign-out-alt");
+            }
+        }
+
+        function resetEverything() {
+            if(confirm("Atenção: Você deseja sair da operação? Os dados na nuvem NÃO serão apagados, apenas a sua sessão local.")) {
+                finalizeBatch();
+            }
+        }
+
+        // --- ZAP SEM ADD LOGIC ---
         function openWhatsapp() {
-            const p = document.getElementById('phoneInput').value.replace(/\D/g, '');
-            const m = encodeURIComponent(document.getElementById('messageInput').value);
-            if(p.length < 10) return showToast("Telefone Inválido", "bg-red-500");
-            window.open(`https://api.whatsapp.com/send?phone=55${p}&text=${m}`, '_blank');
+            const phone = document.getElementById('phoneInput').value.replace(/\D/g, '');
+            const msg = encodeURIComponent(document.getElementById('messageInput').value);
+            if(phone.length < 10) return showToast("Telefone inválido", "bg-red-500", "fa-exclamation-triangle");
+            window.open(`https://api.whatsapp.com/send?phone=55${phone}&text=${msg}`, '_blank');
         }
+
+        // Formatação de telefone
+        document.getElementById('phoneInput').addEventListener('input', function(e) {
+            let v = e.target.value.replace(/\D/g, '');
+            if (v.length > 11) v = v.slice(0, 11);
+            if (v.length > 10) v = v.replace(/^(\d\d)(\d{5})(\d{4}).*/, "($1) $2-$3");
+            else if (v.length > 6) v = v.replace(/^(\d\d)(\d{4})(\d{0,4}).*/, "($1) $2-$3");
+            else if (v.length > 2) v = v.replace(/^(\d\d)(\d{0,5}).*/, "($1) $2");
+            else if (v.length > 0) v = v.replace(/^(\d*)/, "($1");
+            e.target.value = v;
+        });
+
     </script>
 </body>
 </html>
