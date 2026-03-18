@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Página Preta</title>
+    <style>
+        body {
+            background-color: black; /* Fundo preto */
+            color: white;            /* Texto branco para contraste */
+            display: flex;
+            justify-content: center; /* Centraliza horizontalmente */
+            align-items: center;     /* Centraliza verticalmente */
+            height: 100vh;           /* Define altura total da tela */
+            margin: 0;
+            font-family: Arial, sans-serif;
+            font-size: 3rem;         /* Tamanho da fonte */
+        }
+    </style>
+</head>
+<body>
+    <div>Olá</div>
+</body>
+</html>
