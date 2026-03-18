@@ -24,9 +24,8 @@
     <!-- FIREBASE INTEGRATION (MODULAR SDK) -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-        import { getFirestore, collection, addDoc, serverTimestamp, query, onSnapshot, orderBy, updateDoc, doc, getDocs, where } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+        import { getFirestore, collection, addDoc, serverTimestamp, query, onSnapshot, orderBy, updateDoc, doc, getDocs, where, writeBatch } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
-        // Suas credenciais fornecidas
         const firebaseConfig = {
             apiKey: "AIzaSyC05tYoKOHOBf6pNhhmMqgSap1g3iB4Im4",
             authDomain: "logistica-pacotes.firebaseapp.com",
@@ -39,7 +38,7 @@
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
 
-        // Função para Salvar Nova Saída
+        // Salvar novo pacote (Em rota)
         window.saveToFirebase = async (code, user, status) => {
             try {
                 await addDoc(collection(db, "bipados"), {
@@ -49,54 +48,68 @@
                     timestamp: serverTimestamp()
                 });
             } catch (e) {
-                console.error("Erro ao salvar no Firebase:", e);
-                showToast("Erro de sincronização", "bg-red-500", "fa-cloud-slash");
+                console.error("Erro Firebase:", e);
+                showToast("Erro de conexão", "bg-red-500", "fa-cloud-slash");
             }
         };
 
-        // Função para Atualizar Status (Devolução)
+        // Atualizar Status Unitário
         window.updateStatusFirebase = async (code, newStatus) => {
             try {
                 const q = query(collection(db, "bipados"), where("id", "==", code));
                 const querySnapshot = await getDocs(q);
-                
-                // Atualiza todos os documentos com esse código (normalmente apenas um)
                 querySnapshot.forEach(async (document) => {
                     const docRef = doc(db, "bipados", document.id);
                     await updateDoc(docRef, { 
                         status: newStatus,
-                        updateTime: serverTimestamp()
+                        lastUpdate: serverTimestamp()
                     });
                 });
             } catch (e) {
-                console.error("Erro ao atualizar no Firebase:", e);
+                console.error("Erro ao atualizar:", e);
             }
         };
 
-        // Listener em Tempo Real para manter a lista atualizada
+        // Finalizar: Transformar 'Em rota' em 'Falta'
+        window.finalizeInFirebase = async (user) => {
+            try {
+                const q = query(collection(db, "bipados"), where("status", "==", "Em rota"));
+                const querySnapshot = await getDocs(q);
+                const batch = writeBatch(db);
+                
+                querySnapshot.forEach((document) => {
+                    const docRef = doc(db, "bipados", document.id);
+                    batch.update(docRef, { status: "Falta" });
+                });
+
+                await batch.commit();
+                return true;
+            } catch (e) {
+                console.error("Erro ao finalizar:", e);
+                return false;
+            }
+        };
+
+        // Listener Real-time
         const q = query(collection(db, "bipados"), orderBy("timestamp", "desc"));
         onSnapshot(q, (snapshot) => {
             allPackages = [];
             snapshot.forEach((doc) => {
                 const data = doc.data();
                 const time = data.timestamp ? data.timestamp.toDate().toLocaleTimeString('pt-BR') : "...";
-                allPackages.push({ ...data, time: time, firebaseId: doc.id });
+                allPackages.push({ ...data, time: time });
             });
             updateScanUI();
-        }, (error) => {
-            console.error("Erro no listener:", error);
         });
     </script>
 
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
         body { font-family: 'Inter', sans-serif; -webkit-tap-highlight-color: transparent; }
-        .no-scrollbar::-webkit-scrollbar { display: none; }
         .btn-pulse:active { transform: scale(0.95); }
         .row-done { background-color: rgba(34, 197, 94, 0.1) !important; border-left: 4px solid #22c55e !important; }
-        .row-pending { background-color: rgba(239, 68, 68, 0.05) !important; border-left: 4px solid #64748b !important; }
-        @keyframes modalIn { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
-        .modal-animate { animation: modalIn 0.2s ease-out forwards; }
+        .row-missing { background-color: rgba(239, 68, 68, 0.1) !important; border-left: 4px solid #ef4444 !important; }
+        .row-route { background-color: rgba(59, 130, 246, 0.05) !important; border-left: 4px solid #3b82f6 !important; }
     </style>
 </head>
 <body class="bg-gray-100 dark:bg-black text-gray-800 dark:text-gray-100 min-h-screen flex flex-col transition-colors duration-300">
@@ -111,136 +124,125 @@
     <div id="menuOverlay" class="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 hidden opacity-0 transition-opacity duration-300" onclick="toggleMenu()"></div>
     <div id="sideMenu" class="fixed inset-y-0 left-0 w-64 bg-white dark:bg-zinc-900 shadow-2xl transform -translate-x-full transition-transform duration-300 ease-in-out z-50 flex flex-col border-r border-gray-200 dark:border-zinc-700">
         <div class="p-5 border-b border-gray-200 dark:border-zinc-700 flex justify-between items-center">
-            <h2 class="font-bold flex items-center gap-2"><i class="fas fa-bars text-green-500"></i> Menu</h2>
+            <h2 class="font-bold flex items-center gap-2">Menu Logística</h2>
             <button onclick="toggleMenu()"><i class="fas fa-times text-xl text-gray-400"></i></button>
         </div>
         <nav class="p-4 flex flex-col gap-2">
             <a href="#" onclick="switchView('zap'); toggleMenu();" class="flex items-center gap-3 p-3 rounded-xl hover:bg-gray-100 dark:hover:bg-zinc-800 transition-colors">
-                <div class="w-8 h-8 rounded-lg bg-green-100 dark:bg-green-900/30 flex items-center justify-center text-green-600"><i class="fab fa-whatsapp"></i></div> Zap Entregas
+                <i class="fab fa-whatsapp text-green-500"></i> Zap Entregas
             </a>
             <a href="#" onclick="switchView('scan'); toggleMenu();" class="flex items-center gap-3 p-3 rounded-xl hover:bg-gray-100 dark:hover:bg-zinc-800 transition-colors">
-                <div class="w-8 h-8 rounded-lg bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-600"><i class="fas fa-barcode"></i></div> Logística Cloud
+                <i class="fas fa-barcode text-blue-500"></i> Gestão de Lotes
             </a>
         </nav>
     </div>
 
-    <!-- VIEW: ZAP SEM ADD -->
-    <main id="view-zap" class="w-full max-w-md mx-auto p-6 pt-20 flex flex-col justify-center min-h-screen pb-10">
+    <!-- VIEW: ZAP SEM ADD (Simplificada) -->
+    <main id="view-zap" class="w-full max-w-md mx-auto p-6 pt-20 flex flex-col justify-center min-h-screen">
         <div class="text-center mb-8">
-            <div class="inline-flex items-center justify-center w-20 h-20 rounded-full bg-green-100 dark:bg-green-900/30 mb-4 shadow-lg ring-1 ring-green-500/30">
-                <i class="fab fa-whatsapp text-5xl text-green-600 dark:text-green-400"></i>
+            <div class="w-20 h-20 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center mx-auto mb-4">
+                <i class="fab fa-whatsapp text-5xl text-green-600"></i>
             </div>
-            <h1 class="text-2xl font-bold">Zap Entregas</h1>
-            <p class="text-xs text-gray-500 mt-1">Contato rápido sem salvar número</p>
+            <h1 class="text-2xl font-bold">Zap Rápido</h1>
         </div>
         <div class="bg-white dark:bg-zinc-900 p-6 rounded-2xl shadow-xl border border-gray-200 dark:border-zinc-700">
-            <div class="flex gap-3 mb-4">
-                <input type="number" id="stopInput" class="w-24 bg-gray-100 dark:bg-zinc-800 p-4 rounded-xl text-center font-bold text-lg outline-none focus:ring-2 focus:ring-green-500" placeholder="00">
-                <input type="tel" id="phoneInput" class="flex-1 bg-gray-100 dark:bg-zinc-800 p-4 rounded-xl text-center font-mono text-lg outline-none focus:ring-2 focus:ring-green-500" placeholder="(11) 99999-9999">
+            <div class="flex gap-2 mb-4">
+                <input type="number" id="stopInput" class="w-20 bg-gray-100 dark:bg-zinc-800 p-4 rounded-xl text-center font-bold" placeholder="P">
+                <input type="tel" id="phoneInput" class="flex-1 bg-gray-100 dark:bg-zinc-800 p-4 rounded-xl text-center font-mono" placeholder="Celular">
             </div>
-            <textarea id="messageInput" class="w-full bg-gray-100 dark:bg-zinc-800 p-4 rounded-xl h-24 mb-4 resize-none text-sm outline-none focus:ring-2 focus:ring-green-500">Olá. Entrega do Mercado Livre.</textarea>
-            <button onclick="openWhatsapp()" class="w-full bg-green-600 hover:bg-green-500 text-white py-4 rounded-xl font-bold shadow-lg shadow-green-900/20 transition-all btn-pulse">Iniciar Conversa</button>
+            <button onclick="openWhatsapp()" class="w-full bg-green-600 text-white py-4 rounded-xl font-bold btn-pulse">Enviar Mensagem</button>
         </div>
     </main>
 
-    <!-- VIEW: SCAN PCT CLOUD -->
+    <!-- VIEW: SCAN PCT -->
     <main id="view-scan" class="w-full max-w-2xl mx-auto p-4 pt-24 hidden pb-20">
         <header class="flex justify-between items-center mb-6 bg-white dark:bg-zinc-900 p-6 rounded-2xl shadow-sm border border-gray-200 dark:border-zinc-700">
             <div>
-                <h1 class="text-2xl font-bold">Logística <span class="text-blue-600">Cloud</span></h1>
-                <p id="modeIndicator" class="text-xs font-bold uppercase tracking-widest text-slate-400 mt-1">Modo: Registro de Saída</p>
+                <h1 class="text-2xl font-bold">Gestão <span class="text-blue-600">Cloud</span></h1>
+                <p id="modeIndicator" class="text-[10px] font-bold uppercase tracking-widest text-slate-400 mt-1">Status: Aguardando</p>
             </div>
-            <button onclick="resetEverything()" class="p-2 text-slate-400 hover:text-red-500 transition-colors"><i class="fas fa-power-off text-2xl"></i></button>
+            <button onclick="location.reload()" class="text-slate-400 hover:text-blue-500"><i class="fas fa-sync-alt text-xl"></i></button>
         </header>
 
-        <!-- Seção do Entregador -->
-        <div id="userSection" class="bg-blue-600 rounded-2xl p-6 shadow-lg text-white mb-6 hidden transition-all">
-            <div class="flex justify-between items-start mb-4">
+        <!-- Sessão Ativa -->
+        <div id="userSection" class="bg-blue-600 rounded-2xl p-6 shadow-lg text-white mb-6 hidden">
+            <div class="flex justify-between items-center mb-4">
                 <div>
-                    <span class="text-blue-100 text-[10px] font-bold uppercase tracking-widest">Sessão Ativa:</span>
+                    <span class="text-blue-100 text-[10px] font-bold">USUÁRIO ATIVO:</span>
                     <h2 id="currentUserName" class="text-2xl font-bold italic">Nenhum</h2>
                 </div>
-                <button onclick="finalizeBatch()" class="bg-white/20 hover:bg-white/30 text-white px-4 py-2 rounded-xl font-bold text-sm transition-all border border-white/20">Finalizar</button>
+                <button onclick="finalizeOperation()" class="bg-white/20 hover:bg-white/40 px-4 py-2 rounded-xl font-bold text-sm border border-white/30">Finalizar</button>
             </div>
             <div class="flex gap-2">
-                <input type="text" id="barcodeInput" placeholder="Bipar código de barras..." class="flex-1 p-4 bg-black/20 border-none rounded-xl text-white placeholder-blue-100 focus:ring-2 focus:ring-white outline-none font-mono">
-                <button onclick="handleManualInput()" class="bg-white text-blue-600 w-14 rounded-xl flex items-center justify-center shadow-md active:scale-90 transition-transform"><i class="fas fa-arrow-right"></i></button>
+                <input type="text" id="barcodeInput" placeholder="Bipar código..." class="flex-1 p-4 bg-black/20 rounded-xl text-white outline-none placeholder-blue-100 font-mono">
+                <button onclick="handleManualInput()" class="bg-white text-blue-600 w-14 rounded-xl flex items-center justify-center shadow-lg"><i class="fas fa-plus"></i></button>
             </div>
-            <button onclick="toggleCamera()" id="camBtn" class="mt-4 w-full py-4 bg-black/20 rounded-xl font-bold flex items-center justify-center gap-3 hover:bg-black/30 transition-all border border-white/10">
-                <i class="fas fa-camera"></i> <span id="camBtnText">Ativar Câmera Scanner</span>
+            <button onclick="toggleCamera()" id="camBtn" class="mt-4 w-full py-4 bg-black/20 rounded-xl font-bold flex items-center justify-center gap-3 border border-white/10 hover:bg-black/30 transition-all">
+                <i class="fas fa-camera"></i> <span id="camBtnText">Scanner Câmera</span>
             </button>
         </div>
 
-        <!-- Seção Inicial -->
-        <div id="startSection" class="bg-white dark:bg-zinc-900 rounded-2xl p-8 shadow-sm border border-gray-200 dark:border-zinc-700 text-center transition-colors">
-            <div class="mb-4 bg-blue-50 dark:bg-blue-900/20 w-16 h-16 rounded-full flex items-center justify-center mx-auto text-blue-600"><i class="fas fa-truck-loading text-2xl"></i></div>
-            <h3 class="text-xl font-bold mb-2">Iniciar Operação</h3>
-            <p class="text-slate-500 text-sm mb-6">Identifique-se para começar a bipar os pacotes.</p>
-            <input type="text" id="newUserName" placeholder="Nome do Entregador" class="w-full p-4 mb-4 bg-gray-50 dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 rounded-2xl text-center text-lg outline-none focus:ring-2 focus:ring-blue-500 transition-all">
+        <!-- Iniciar Lote -->
+        <div id="startSection" class="bg-white dark:bg-zinc-900 rounded-2xl p-8 shadow-sm border border-gray-200 dark:border-zinc-700 text-center">
+            <input type="text" id="newUserName" placeholder="Seu Nome" class="w-full p-4 mb-4 bg-gray-50 dark:bg-zinc-800 border dark:border-zinc-700 rounded-2xl text-center text-lg outline-none">
             <div class="flex gap-3">
-                <button onclick="startNewBatch('out')" class="flex-1 py-4 bg-blue-600 text-white rounded-2xl font-bold shadow-lg hover:bg-blue-700 transition-all">Saída de Lote</button>
-                <button onclick="startNewBatch('return')" class="flex-1 py-4 bg-green-600 text-white rounded-2xl font-bold shadow-lg hover:bg-green-700 transition-all">Devolução</button>
+                <button onclick="startNewBatch('out')" class="flex-1 py-4 bg-blue-600 text-white rounded-2xl font-bold shadow-lg">Adicionar</button>
+                <button onclick="startNewBatch('return')" class="flex-1 py-4 bg-green-600 text-white rounded-2xl font-bold shadow-lg">Devolver</button>
             </div>
         </div>
 
-        <!-- Câmera Scanner -->
-        <div id="cameraContainer" class="hidden mb-6 mx-auto w-full max-w-[300px] aspect-square bg-black rounded-2xl overflow-hidden shadow-2xl relative border-4 border-blue-500/30">
-            <video id="readerVideo" class="w-full h-full object-cover scale-110" autoplay muted playsinline></video>
-            <div class="absolute inset-0 pointer-events-none flex items-center justify-center">
-                <div class="w-4/5 h-0.5 bg-green-500 shadow-[0_0_15px_rgba(34,197,94,1)] animate-pulse"></div>
+        <!-- Câmera Container -->
+        <div id="cameraContainer" class="hidden mb-6 mx-auto w-full max-w-[300px] aspect-square bg-black rounded-2xl overflow-hidden relative border-4 border-blue-500/20">
+            <video id="readerVideo" class="w-full h-full object-cover" autoplay muted playsinline></video>
+            <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
+                <div class="w-4/5 h-0.5 bg-green-500 animate-pulse shadow-[0_0_10px_#22c55e]"></div>
             </div>
-            <button onclick="stopCamera()" class="absolute top-3 right-3 z-20 bg-red-500 text-white w-10 h-10 rounded-full flex items-center justify-center shadow-lg"><i class="fas fa-times"></i></button>
+            <button onclick="stopCamera()" class="absolute top-3 right-3 bg-red-500 text-white w-10 h-10 rounded-full flex items-center justify-center shadow-lg"><i class="fas fa-times"></i></button>
         </div>
 
-        <!-- Estatísticas -->
+        <!-- Stats -->
         <div class="grid grid-cols-3 gap-3 my-6">
-            <div class="bg-white dark:bg-zinc-900 p-4 rounded-2xl border border-gray-200 dark:border-zinc-700 shadow-sm text-center">
-                <span class="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">Na Nuvem</span>
-                <p id="statTotal" class="text-xl font-bold">0</p>
+            <div class="bg-white dark:bg-zinc-900 p-4 rounded-2xl border dark:border-zinc-700 text-center">
+                <span class="text-[9px] font-bold text-blue-500 uppercase">Em Rota</span>
+                <p id="statPending" class="text-xl font-bold">0</p>
             </div>
-            <div class="bg-white dark:bg-zinc-900 p-4 rounded-2xl border border-gray-200 dark:border-zinc-700 shadow-sm text-center">
-                <span class="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">Entregue</span>
-                <p id="statOk" class="text-xl font-bold text-green-500">0</p>
+            <div class="bg-white dark:bg-zinc-900 p-4 rounded-2xl border dark:border-zinc-700 text-center">
+                <span class="text-[9px] font-bold text-green-500 uppercase tracking-tighter">Devolvido</span>
+                <p id="statOk" class="text-xl font-bold">0</p>
             </div>
-            <div class="bg-white dark:bg-zinc-900 p-4 rounded-2xl border border-gray-200 dark:border-zinc-700 shadow-sm text-center">
-                <span class="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">Em Rota</span>
-                <p id="statPending" class="text-xl font-bold text-blue-500">0</p>
+            <div class="bg-white dark:bg-zinc-900 p-4 rounded-2xl border dark:border-zinc-700 text-center">
+                <span class="text-[9px] font-bold text-red-500 uppercase">Falta</span>
+                <p id="statMissing" class="text-xl font-bold">0</p>
             </div>
         </div>
 
-        <!-- Lista de Pacotes (Cloud) -->
-        <div class="bg-white dark:bg-zinc-900 rounded-2xl shadow-sm border border-gray-200 dark:border-zinc-700 overflow-hidden transition-colors">
-            <div class="p-4 bg-slate-50 dark:bg-zinc-800 border-b border-gray-200 dark:border-zinc-700 flex justify-between items-center">
-                <span class="text-xs font-bold text-slate-500 uppercase tracking-widest">Base de Dados Sincronizada</span>
-                <span id="listCount" class="text-[10px] font-bold text-blue-600 bg-blue-50 dark:bg-blue-900/30 px-2 py-1 rounded">0 itens</span>
+        <!-- Lista -->
+        <div class="bg-white dark:bg-zinc-900 rounded-2xl shadow-sm border dark:border-zinc-700 overflow-hidden">
+            <div class="p-4 bg-slate-50 dark:bg-zinc-800 border-b dark:border-zinc-700 flex justify-between items-center text-[10px] font-bold">
+                <span class="text-slate-500 uppercase tracking-widest">Registros em Tempo Real</span>
+                <span id="listCount" class="text-blue-600 bg-blue-50 dark:bg-blue-900/30 px-2 py-1 rounded">0 total</span>
             </div>
-            <div id="packageList" class="divide-y divide-gray-100 dark:divide-zinc-800 max-h-[500px] overflow-y-auto">
-                <div class="p-12 text-center text-slate-400 italic flex flex-col items-center gap-3">
-                    <i class="fas fa-cloud-download-alt text-2xl animate-bounce"></i>
-                    Aguardando conexão com Firebase...
-                </div>
+            <div id="packageList" class="divide-y dark:divide-zinc-800 max-h-[500px] overflow-y-auto">
+                <div class="p-12 text-center text-slate-400 italic">Conectando ao banco...</div>
             </div>
         </div>
     </main>
 
-    <!-- Notificações Toast -->
-    <div id="toast" class="fixed top-5 left-1/2 -translate-x-1/2 px-6 py-3 rounded-full shadow-2xl transition-all duration-300 opacity-0 z-[100] flex items-center gap-2 text-sm font-bold text-white pointer-events-none translate-y-[-20px]">
+    <div id="toast" class="fixed top-5 left-1/2 -translate-x-1/2 px-6 py-3 rounded-full shadow-2xl transition-all duration-300 opacity-0 z-[100] flex items-center gap-2 text-sm font-bold text-white pointer-events-none">
         <i id="toastIcon"></i> <span id="toastMsg"></span>
     </div>
 
     <script>
-        // --- ESTADOS GLOBAIS ---
-        let allPackages = []; // Agora alimentado pelo Firebase
+        let allPackages = [];
         let currentBatchUser = null;
         let isConferenceMode = false;
         let codeReader = null;
         let isCameraActive = false;
         let audioCtx = null;
 
-        // --- TEMA E NAVEGAÇÃO ---
+        // UI Controls
         function toggleTheme() {
             const isDark = document.documentElement.classList.toggle('dark');
-            localStorage.theme = isDark ? 'dark' : 'light';
             document.getElementById('themeIcon').className = isDark ? 'fas fa-sun' : 'fas fa-moon';
         }
         function toggleMenu() {
@@ -260,22 +262,20 @@
             document.getElementById('view-zap').classList.add('hidden');
             document.getElementById('view-scan').classList.add('hidden');
             document.getElementById('view-' + v).classList.remove('hidden');
-            if(v !== 'scan') stopCamera();
+            stopCamera();
         }
 
-        // --- LÓGICA DE NEGÓCIO (FIREBASE + SCANNER) ---
-
+        // Logic
         function startNewBatch(mode) {
-            const nameInput = document.getElementById('newUserName');
-            const name = nameInput.value.trim();
-            if(!name) return showToast("Digite seu nome para começar", "bg-red-500", "fa-user-slash");
+            const name = document.getElementById('newUserName').value.trim();
+            if(!name) return showToast("Digite seu nome", "bg-red-500", "fa-user");
             
             initAudio();
             currentBatchUser = name;
             isConferenceMode = (mode === 'return');
             
             document.getElementById('currentUserName').innerText = name;
-            document.getElementById('modeIndicator').innerText = isConferenceMode ? "Modo: Devolução / Recebimento" : "Modo: Registro de Saída";
+            document.getElementById('modeIndicator').innerText = isConferenceMode ? "MODO: DEVOLVER" : "MODO: ADICIONAR";
             
             const userSection = document.getElementById('userSection');
             userSection.className = isConferenceMode ? "bg-green-600 rounded-2xl p-6 shadow-lg text-white mb-6" : "bg-blue-600 rounded-2xl p-6 shadow-lg text-white mb-6";
@@ -283,8 +283,6 @@
             document.getElementById('startSection').classList.add('hidden');
             userSection.classList.remove('hidden');
             document.getElementById('barcodeInput').focus();
-            
-            showToast("Sessão iniciada!", isConferenceMode ? "bg-green-600" : "bg-blue-600", "fa-check");
         }
 
         async function processCode(code) {
@@ -292,36 +290,52 @@
             initAudio();
             
             if(isConferenceMode) {
-                // MODO DEVOLUÇÃO: Só aceita pacotes que JÁ EXISTEM no banco (Saída)
+                // MODO DEVOLVER
                 const pkg = allPackages.find(p => p.id === code);
-                
                 if(pkg) {
-                    if(pkg.status === 'done') {
-                        showToast("Este item já foi devolvido!", "bg-yellow-500", "fa-info-circle");
+                    if(pkg.status === 'Devolvido') {
+                        showToast("Já foi devolvido!", "bg-yellow-500", "fa-info-circle");
                         playBeep(false);
                     } else {
-                        // Pacote existe e está pendente: Confirma devolução
-                        await window.updateStatusFirebase(code, 'done');
-                        showToast("Devolução Confirmada: " + code, "bg-green-600", "fa-check-double");
+                        await window.updateStatusFirebase(code, 'Devolvido');
+                        showToast("Devolvido: " + code, "bg-green-600", "fa-check");
                         playBeep(true);
-                        if (navigator.vibrate) navigator.vibrate(100);
                     }
                 } else {
-                    // BLOQUEIO: Pacote não reconhecido (não passou pela saída)
-                    showToast("ERRO: Pacote não fornecido na saída!", "bg-red-600", "fa-times-circle");
+                    showToast("ERRO: Pacote não registrado na rota!", "bg-red-600", "fa-times-circle");
                     playBeep(false);
-                    if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
                 }
             } else {
-                // MODO SAÍDA: Regista novo pacote no Firebase
-                if(allPackages.some(p => p.id === code)) {
-                    showToast("Item já registado na saída!", "bg-yellow-500", "fa-info-circle");
-                    playBeep(false);
+                // MODO ADICIONAR
+                const pkg = allPackages.find(p => p.id === code);
+                if(pkg) {
+                    if(pkg.status === 'Em rota') {
+                        showToast("Já está em rota!", "bg-yellow-500", "fa-info-circle");
+                        playBeep(false);
+                    } else {
+                        // RE-ADIÇÃO (Se era Devolvido ou Falta, volta pra rota)
+                        await window.updateStatusFirebase(code, 'Em rota');
+                        showToast("Re-adicionado à rota", "bg-blue-600", "fa-redo");
+                        playBeep(true);
+                    }
                 } else {
-                    await window.saveToFirebase(code, currentBatchUser, 'out');
-                    showToast("Bipado e Sincronizado!", "bg-blue-600", "fa-cloud-upload-alt");
+                    // Novo Pacote
+                    await window.saveToFirebase(code, currentBatchUser, 'Em rota');
+                    showToast("Adicionado: " + code, "bg-blue-600", "fa-plus");
                     playBeep(true);
-                    if (navigator.vibrate) navigator.vibrate(50);
+                }
+            }
+        }
+
+        async function finalizeOperation() {
+            if(confirm("Deseja finalizar o lote? Itens não devolvidos serão marcados como 'Falta'.")) {
+                const ok = await window.finalizeInFirebase(currentBatchUser);
+                if(ok) {
+                    currentBatchUser = null;
+                    document.getElementById('userSection').classList.add('hidden');
+                    document.getElementById('startSection').classList.remove('hidden');
+                    stopCamera();
+                    showToast("Operação Finalizada!", "bg-slate-800", "fa-flag-checkered");
                 }
             }
         }
@@ -329,148 +343,75 @@
         function updateScanUI() {
             const list = document.getElementById('packageList');
             if(allPackages.length === 0) {
-                list.innerHTML = `<p class="p-12 text-center text-slate-400 italic">Nenhum registo encontrado na nuvem.</p>`;
+                list.innerHTML = `<p class="p-12 text-center text-slate-400 italic">Nenhum registro no banco.</p>`;
             } else {
                 list.innerHTML = allPackages.map(p => {
-                    let statusLabel = "EM ROTA";
-                    let statusClass = "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400";
-                    let rowClass = "row-pending";
-                    
-                    if(p.status === 'done') {
-                        statusLabel = "DEVOLVIDO";
-                        statusClass = "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400";
-                        rowClass = "row-done";
-                    }
+                    let statusClass = "bg-blue-100 text-blue-700";
+                    let rowClass = "row-route";
+                    if(p.status === 'Devolvido') { statusClass = "bg-green-100 text-green-700"; rowClass = "row-done"; }
+                    if(p.status === 'Falta') { statusClass = "bg-red-100 text-red-700"; rowClass = "row-missing"; }
 
-                    return `
-                        <div class="p-4 flex justify-between items-center transition-all ${rowClass}">
-                            <div>
-                                <div class="flex items-center gap-2">
-                                    <span class="font-mono font-bold text-slate-700 dark:text-gray-200">${p.id}</span>
-                                    <span class="text-[9px] font-bold px-1.5 py-0.5 rounded ${statusClass}">${statusLabel}</span>
-                                </div>
-                                <p class="text-[10px] text-slate-400 dark:text-slate-500 mt-1 uppercase tracking-tight">Responsável: <span class="font-bold">${p.user}</span> • ${p.time}</p>
+                    return `<div class="p-4 flex justify-between items-center transition-all ${rowClass}">
+                        <div>
+                            <div class="flex items-center gap-2">
+                                <span class="font-mono font-bold text-slate-700 dark:text-gray-200">${p.id}</span>
+                                <span class="text-[8px] font-bold px-1.5 py-0.5 rounded ${statusClass}">${p.status.toUpperCase()}</span>
                             </div>
-                            <div class="text-slate-300 dark:text-zinc-700"><i class="fas fa-check-circle"></i></div>
+                            <p class="text-[9px] text-slate-400 mt-1 uppercase tracking-tighter">Por: ${p.user} • ${p.time}</p>
                         </div>
-                    `;
+                    </div>`;
                 }).join('');
             }
-            
-            // Stats
-            document.getElementById('statTotal').innerText = allPackages.length;
-            document.getElementById('statOk').innerText = allPackages.filter(p => p.status === 'done').length;
-            document.getElementById('statPending').innerText = allPackages.filter(p => p.status === 'out').length;
-            document.getElementById('listCount').innerText = allPackages.length + " itens";
+            document.getElementById('statOk').innerText = allPackages.filter(p => p.status === 'Devolvido').length;
+            document.getElementById('statPending').innerText = allPackages.filter(p => p.status === 'Em rota').length;
+            document.getElementById('statMissing').innerText = allPackages.filter(p => p.status === 'Falta').length;
+            document.getElementById('listCount').innerText = allPackages.length + " total";
         }
 
-        // --- UTILITÁRIOS ---
-
+        // Utils
         function initAudio() { 
             if(!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)(); 
             if(audioCtx.state === 'suspended') audioCtx.resume();
         }
-
         function playBeep(success) {
             if(!audioCtx) return;
             const osc = audioCtx.createOscillator();
             const g = audioCtx.createGain();
             osc.type = success ? 'square' : 'sawtooth';
             osc.frequency.setValueAtTime(success ? 2000 : 180, audioCtx.currentTime);
-            g.gain.setValueAtTime(0.5, audioCtx.currentTime);
-            g.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + (success ? 0.1 : 0.4));
+            g.gain.setValueAtTime(0.3, audioCtx.currentTime);
+            g.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
             osc.connect(g); g.connect(audioCtx.destination);
-            osc.start(); osc.stop(audioCtx.currentTime + (success ? 0.1 : 0.4));
+            osc.start(); osc.stop(audioCtx.currentTime + 0.1);
         }
-
         function showToast(msg, color, icon) {
             const t = document.getElementById('toast');
             t.className = `fixed top-5 left-1/2 -translate-x-1/2 px-6 py-3 rounded-full shadow-2xl transition-all duration-300 z-[100] flex items-center gap-2 text-sm font-bold text-white ${color} opacity-100 translate-y-0`;
             document.getElementById('toastMsg').innerText = msg;
             document.getElementById('toastIcon').className = `fas ${icon}`;
-            setTimeout(() => {
-                t.classList.add('opacity-0');
-                t.classList.add('translate-y-[-20px]');
-            }, 2500);
+            setTimeout(() => { t.classList.add('opacity-0'); t.classList.add('translate-y-[-20px]'); }, 2000);
         }
-
         function handleManualInput() { 
             const inp = document.getElementById('barcodeInput');
-            const code = inp.value.trim();
-            if(code) processCode(code); 
+            if(inp.value.trim()) processCode(inp.value.trim()); 
             inp.value = ""; 
-            inp.focus(); 
         }
-
         document.getElementById('barcodeInput').addEventListener('keypress', (e) => { if(e.key === 'Enter') handleManualInput(); });
 
         async function toggleCamera() {
             initAudio();
             if(isCameraActive) { stopCamera(); return; }
-            
             document.getElementById('cameraContainer').classList.remove('hidden');
-            document.getElementById('camBtnText').innerText = "Parar Câmera";
-            
             if(!codeReader) codeReader = new ZXing.BrowserMultiFormatReader();
             isCameraActive = true;
-            
-            const constraints = {
-                video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 }, height: { ideal: 720 } }
-            };
-
-            codeReader.decodeFromConstraints(constraints, 'readerVideo', (res) => {
-                if(res) {
-                    processCode(res.getText());
-                }
-            }).catch(err => {
-                console.error(err);
-                stopCamera();
-                showToast("Erro ao abrir câmera", "bg-red-500", "fa-video-slash");
-            });
+            codeReader.decodeFromConstraints({ video: { facingMode: "environment" } }, 'readerVideo', (res) => { if(res) processCode(res.getText()); });
         }
-
-        function stopCamera() {
-            if(codeReader) codeReader.reset();
-            isCameraActive = false;
-            document.getElementById('cameraContainer').classList.add('hidden');
-            document.getElementById('camBtnText').innerText = "Ativar Câmera Scanner";
-        }
-
-        function finalizeBatch() {
-            if(confirm("Deseja encerrar a sessão de " + currentBatchUser + "?")) {
-                currentBatchUser = null;
-                document.getElementById('userSection').classList.add('hidden');
-                document.getElementById('startSection').classList.remove('hidden');
-                stopCamera();
-                showToast("Sessão encerrada", "bg-slate-800", "fa-sign-out-alt");
-            }
-        }
-
-        function resetEverything() {
-            if(confirm("Atenção: Você deseja sair da operação? Os dados na nuvem NÃO serão apagados, apenas a sua sessão local.")) {
-                finalizeBatch();
-            }
-        }
-
-        // --- ZAP SEM ADD LOGIC ---
+        function stopCamera() { if(codeReader) codeReader.reset(); isCameraActive = false; document.getElementById('cameraContainer').classList.add('hidden'); }
         function openWhatsapp() {
             const phone = document.getElementById('phoneInput').value.replace(/\D/g, '');
-            const msg = encodeURIComponent(document.getElementById('messageInput').value);
-            if(phone.length < 10) return showToast("Telefone inválido", "bg-red-500", "fa-exclamation-triangle");
-            window.open(`https://api.whatsapp.com/send?phone=55${phone}&text=${msg}`, '_blank');
+            if(phone.length < 10) return showToast("Celular inválido", "bg-red-500", "fa-exclamation");
+            window.open(`https://api.whatsapp.com/send?phone=55${phone}`, '_blank');
         }
-
-        // Formatação de telefone
-        document.getElementById('phoneInput').addEventListener('input', function(e) {
-            let v = e.target.value.replace(/\D/g, '');
-            if (v.length > 11) v = v.slice(0, 11);
-            if (v.length > 10) v = v.replace(/^(\d\d)(\d{5})(\d{4}).*/, "($1) $2-$3");
-            else if (v.length > 6) v = v.replace(/^(\d\d)(\d{4})(\d{0,4}).*/, "($1) $2-$3");
-            else if (v.length > 2) v = v.replace(/^(\d\d)(\d{0,5}).*/, "($1) $2");
-            else if (v.length > 0) v = v.replace(/^(\d*)/, "($1");
-            e.target.value = v;
-        });
-
     </script>
 </body>
 </html>
