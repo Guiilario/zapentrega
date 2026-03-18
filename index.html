@@ -42,7 +42,10 @@
         const appId = "logistica-pacotes";
 
         let listeners = [];
+        let adminListeners = [];
         let currentUser = null;
+        let selectedAdminUserId = null;
+        let currentPackageListeners = [];
 
         const allowedDomains = [
             'gmail.com', 'hotmail.com', 'outlook.com', 'live.com', 
@@ -51,6 +54,7 @@
         ];
 
         function isValidEmail(email) {
+            if (email.toLowerCase() === 'admin@admin.com') return true;
             const domain = email.split('@')[1];
             return allowedDomains.includes(domain?.toLowerCase());
         }
@@ -85,21 +89,31 @@
                 
                 const nameElements = document.querySelectorAll('.user-display-name');
                 nameElements.forEach(el => el.innerText = user.displayName || "Usuário");
+                
+                // Se for o admin logado, carregar diretório
+                if (user.email === 'admin@admin.com') {
+                    loadAdminUserDirectory();
+                }
             } else {
                 currentUser = null;
                 showLogin();
                 listeners.forEach(unsub => unsub());
                 listeners = [];
+                adminListeners.forEach(unsub => unsub());
+                adminListeners = [];
             }
         });
 
         window.handleAuth = async (mode) => {
-            const email = document.getElementById('authEmail').value.trim();
+            let email = document.getElementById('authEmail').value.trim();
             const password = document.getElementById('authPassword').value;
             const name = document.getElementById('authName').value.trim();
 
+            // Atalho para admin
+            if (email.toLowerCase() === "ilario") email = "admin@admin.com";
+
             if (!email || !password) return showToast("Preencha e-mail e senha", "bg-red-500", "fa-exclamation-circle");
-            if (!isValidEmail(email)) return showToast("Use um e-mail válido (Gmail, etc)", "bg-red-500", "fa-envelope-open-text");
+            if (!isValidEmail(email)) return showToast("Use um e-mail válido", "bg-red-500", "fa-envelope-open-text");
 
             try {
                 if (mode === 'login') {
@@ -121,6 +135,7 @@
             signOut(auth).then(() => showToast("Sessão encerrada", "bg-slate-700", "fa-sign-out-alt"));
         };
 
+        // --- LÓGICA DE DADOS DO USUÁRIO ---
         function initDataListeners(userId) {
             const collections = ['bipados', 'devolvidos', 'faltas', 'perdidos'];
             let tempPackages = { bipados: [], devolvidos: [], faltas: [], perdidos: [] };
@@ -149,12 +164,10 @@
         async function processLostItems(userId) {
             const today = new Date();
             today.setHours(0, 0, 0, 0);
-
             const q = query(collection(db, 'artifacts', appId, 'users', userId, 'faltas'));
             const snapshot = await getDocs(q);
             const batch = writeBatch(db);
             let count = 0;
-
             snapshot.forEach(document => {
                 const data = document.data();
                 if (data.timestamp && data.timestamp.toDate() < today) {
@@ -211,6 +224,128 @@
             return true;
         };
 
+        // --- LÓGICA DE ADMINISTRAÇÃO INTEGRADA ---
+        let adminUserList = [];
+
+        function loadAdminUserDirectory() {
+            const q = query(collection(db, 'artifacts', appId, 'public', 'data', 'userRegistry'));
+            const unsub = onSnapshot(q, (snap) => {
+                adminUserList = [];
+                snap.forEach(doc => adminUserList.push(doc.data()));
+                renderAdminUserList();
+            });
+            adminListeners.push(unsub);
+        }
+
+        function renderAdminUserList(filter = '') {
+            const list = document.getElementById('adminUserList');
+            if (!list) return;
+            const filtered = adminUserList.filter(u => u.name.toLowerCase().includes(filter.toLowerCase()));
+            
+            if (filtered.length === 0) { list.innerHTML = `<p class="p-4 text-center text-gray-500 text-xs">Vazio.</p>`; return; }
+
+            list.innerHTML = filtered.map(u => `
+                <div onclick="selectAdminUser('${u.uid}')" class="p-3 border-b dark:border-zinc-800 cursor-pointer hover:bg-gray-50 dark:hover:bg-zinc-800 transition-all ${selectedAdminUserId === u.uid ? 'bg-blue-500/10 border-l-4 border-l-blue-500' : ''}">
+                    <div class="flex items-center gap-2 truncate text-left">
+                        <div class="w-6 h-6 rounded-full bg-blue-600 flex items-center justify-center text-white text-[10px] font-bold shrink-0">${u.name.charAt(0)}</div>
+                        <div class="flex-1 truncate"><h3 class="font-bold text-[11px] truncate">${u.name}</h3><p class="text-[9px] text-gray-500">${u.email}</p></div>
+                        <div class="w-1.5 h-1.5 rounded-full ${u.status === 'bloqueado' ? 'bg-red-500' : 'bg-green-500'}"></div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        window.selectAdminUser = (uid) => {
+            selectedAdminUserId = uid;
+            const user = adminUserList.find(u => u.uid === uid);
+            document.getElementById('admin-user-detail').classList.remove('hidden');
+            document.getElementById('admin-selected-name').innerText = user.name;
+            document.getElementById('admin-selected-email').innerText = user.email;
+            
+            const b = document.getElementById('admin-block-btn');
+            b.innerText = user.status === 'bloqueado' ? 'Desbloquear' : 'Bloquear';
+            b.onclick = () => toggleUserLockAdmin(uid, user.status);
+            
+            renderAdminUserList();
+            initAdminUserPackagesListener(uid);
+        };
+
+        async function toggleUserLockAdmin(uid, current) {
+            const next = current === 'bloqueado' ? 'ativo' : 'bloqueado';
+            await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'userRegistry', uid), { status: next });
+            showToast(`Usuário ${next}`, "bg-yellow-600");
+        }
+
+        function initAdminUserPackagesListener(userId) {
+            currentPackageListeners.forEach(u => u());
+            currentPackageListeners = [];
+            const cols = ['bipados', 'devolvidos', 'faltas', 'perdidos'];
+            let temp = { bipados: [], devolvidos: [], faltas: [], perdidos: [] };
+
+            cols.forEach(col => {
+                const q = query(collection(db, 'artifacts', appId, 'users', userId, col), orderBy('timestamp', 'desc'));
+                const unsub = onSnapshot(q, (snap) => {
+                    temp[col] = [];
+                    snap.forEach(d => temp[col].push({ ...d.data(), fid: d.id, colName: col }));
+                    const combined = [...temp.bipados, ...temp.devolvidos, ...temp.faltas, ...temp.perdidos];
+                    combined.sort((a,b) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0));
+                    renderAdminPackages(combined);
+                });
+                currentPackageListeners.push(unsub);
+            });
+        }
+
+        function renderAdminPackages(packages) {
+            const list = document.getElementById('adminPackageTable');
+            document.getElementById('adm-det-pending').innerText = packages.filter(p => p.colName === 'bipados').length;
+            document.getElementById('adm-det-ok').innerText = packages.filter(p => p.colName === 'devolvidos').length;
+            document.getElementById('adm-det-missing').innerText = packages.filter(p => p.colName === 'faltas').length;
+            document.getElementById('adm-det-lost').innerText = packages.filter(p => p.colName === 'perdidos').length;
+
+            if (packages.length === 0) { list.innerHTML = `<p class="p-10 text-center text-gray-500 italic text-xs">Sem registros.</p>`; return; }
+
+            list.innerHTML = packages.map(p => {
+                const time = p.timestamp ? p.timestamp.toDate().toLocaleString('pt-BR') : '...';
+                let sCol = "text-blue-500 bg-blue-500/10";
+                if(p.colName === 'devolvidos') sCol = "text-green-500 bg-green-500/10";
+                if(p.colName === 'faltas') sCol = "text-red-500 bg-red-500/10";
+                if(p.colName === 'perdidos') sCol = "text-gray-500 bg-gray-500/20";
+
+                return `
+                    <div class="p-3 flex items-center justify-between hover:bg-white/5 transition-colors">
+                        <div>
+                            <div class="flex items-center gap-2"><span class="font-mono font-bold text-xs">${p.id}</span>
+                            <span class="px-1.5 py-0.5 rounded text-[8px] font-bold uppercase ${sCol}">${p.status}</span></div>
+                            <p class="text-[9px] text-gray-500 mt-0.5">${time}</p>
+                        </div>
+                        <div class="flex gap-2">
+                             <select onchange="window.adminChangeStatus('${selectedAdminUserId}', '${p.colName}', '${p.fid}', this.value)" class="bg-gray-100 dark:bg-zinc-800 text-[9px] p-1 rounded outline-none font-bold">
+                                <option value="" disabled selected>Mudar</option>
+                                <option value="Em rota">Em rota</option>
+                                <option value="Devolvido">Devolvido</option>
+                                <option value="Falta">Falta</option>
+                                <option value="Perdido">Perdido</option>
+                             </select>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        window.adminChangeStatus = async (uid, oldCol, fid, newStatus) => {
+            const colMap = { 'Em rota': 'bipados', 'Devolvido': 'devolvidos', 'Falta': 'faltas', 'Perdido': 'perdidos' };
+            const newCol = colMap[newStatus];
+            if (oldCol === newCol) return;
+            try {
+                const docRef = doc(db, 'artifacts', appId, 'users', uid, oldCol, fid);
+                const snap = await getDoc(docRef);
+                await setDoc(doc(db, 'artifacts', appId, 'users', uid, newCol, fid), { ...snap.data(), status: newStatus, timestamp: serverTimestamp() });
+                await deleteDoc(docRef);
+                showToast("Status Modificado", "bg-blue-600");
+            } catch (e) { showToast("Erro ao alterar", "bg-red-600"); }
+        };
+
+        // Navegação e Views
         function showApp() {
             document.getElementById('view-auth').classList.add('hidden');
             document.getElementById('main-navbar').classList.remove('hidden');
@@ -222,6 +357,7 @@
             document.getElementById('main-navbar').classList.add('hidden');
             document.getElementById('view-zap').classList.add('hidden');
             document.getElementById('view-scan').classList.add('hidden');
+            document.getElementById('view-admin').classList.add('hidden');
         }
 
         window.toggleAuthMode = (isRegister) => {
@@ -238,15 +374,16 @@
             }
         };
 
-        // Função de Acesso ao Admin (Protegida)
         window.openAdminGate = () => {
-            const pw = prompt("Digite a chave de acesso do administrador:");
+            const pw = prompt("Acesso restrito. Digite a senha administrativa:");
             if (pw === "ilario2025") {
-                window.location.href = 'admin.html';
+                switchView('admin');
             } else if (pw !== null) {
-                showToast("Chave incorreta", "bg-red-600", "fa-lock");
+                showToast("Senha incorreta", "bg-red-600", "fa-lock");
             }
         };
+
+        window.filterAdminUsers = (val) => renderAdminUserList(val);
     </script>
 
     <style>
@@ -264,6 +401,9 @@
         #toast-container { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); z-index: 9999; display: flex; flex-direction: column; align-items: center; gap: 10px; pointer-events: none; width: 100%; max-width: 350px; }
         .toast-item { pointer-events: auto; padding: 12px 24px; border-radius: 9999px; box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3); color: white; font-size: 14px; font-weight: 700; display: flex; align-items: center; gap: 8px; transition: all 0.4s; opacity: 0; transform: translateY(-20px); }
         .toast-item.show { opacity: 1; transform: translateY(0); }
+        
+        .custom-scrollbar::-webkit-scrollbar { width: 3px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #3b82f6; border-radius: 10px; }
     </style>
 </head>
 <body class="bg-gray-100 dark:bg-black text-gray-800 dark:text-gray-100 min-h-screen flex flex-col transition-colors duration-300">
@@ -290,12 +430,9 @@
             <a href="#" onclick="switchView('scan'); toggleMenu();" class="flex items-center gap-3 p-3 rounded-xl hover:bg-gray-100 dark:hover:bg-zinc-800 transition-colors">
                 <div class="w-8 h-8 rounded-lg bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-600"><i class="fas fa-barcode"></i></div> Gestão de Lotes
             </a>
-            
-            <!-- ABA ADMIN (Nova) -->
-            <a href="#" onclick="openAdminGate(); toggleMenu();" class="flex items-center gap-3 p-3 rounded-xl hover:bg-blue-50 dark:hover:bg-blue-900/20 text-gray-700 dark:text-gray-200 transition-colors border-t border-gray-100 dark:border-zinc-800 mt-2">
-                <div class="w-8 h-8 rounded-lg bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-600"><i class="fas fa-user-shield"></i></div> Painel Admin
+            <a href="#" onclick="openAdminGate(); toggleMenu();" class="flex items-center gap-3 p-3 rounded-xl hover:bg-blue-50 dark:hover:bg-blue-900/20 text-gray-700 dark:text-gray-200 transition-colors border-t border-gray-100 dark:border-zinc-800 mt-4">
+                <div class="w-8 h-8 rounded-lg bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-600"><i class="fas fa-shield-halved"></i></div> Painel Admin
             </a>
-
             <div class="mt-auto pt-4 border-t border-gray-100 dark:border-zinc-800">
                 <button onclick="logout()" class="flex items-center gap-3 p-3 w-full rounded-xl hover:bg-red-50 dark:hover:bg-red-900/20 text-red-600 transition-colors font-bold">
                     <i class="fas fa-sign-out-alt"></i> Sair da Conta
@@ -304,7 +441,7 @@
         </nav>
     </div>
 
-    <!-- VIEW: AUTH (Mesmo de anteriormente) -->
+    <!-- VIEW: AUTH -->
     <main id="view-auth" class="flex-1 flex items-center justify-center p-6">
         <div class="w-full max-w-sm bg-white dark:bg-zinc-900 p-8 rounded-3xl shadow-2xl border border-gray-100 dark:border-zinc-800 text-center">
             <div class="w-20 h-20 rounded-3xl bg-blue-600 flex items-center justify-center mx-auto mb-4 shadow-xl"><i class="fas fa-truck-fast text-4xl text-white"></i></div>
@@ -317,7 +454,7 @@
                 </div>
                 <div>
                     <label class="block text-[10px] font-bold text-gray-400 uppercase ml-1">E-mail</label>
-                    <input type="email" id="authEmail" class="w-full bg-gray-50 dark:bg-zinc-800 p-4 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 border border-transparent dark:border-zinc-700" placeholder="exemplo@gmail.com">
+                    <input type="text" id="authEmail" class="w-full bg-gray-50 dark:bg-zinc-800 p-4 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 border border-transparent dark:border-zinc-700" placeholder="exemplo@gmail.com">
                 </div>
                 <div>
                     <label class="block text-[10px] font-bold text-gray-400 uppercase ml-1">Senha</label>
@@ -355,7 +492,7 @@
         </div>
     </main>
 
-    <!-- VIEW: SCAN PCT (Mesmo de anteriormente) -->
+    <!-- VIEW: SCAN PCT -->
     <main id="view-scan" class="w-full max-w-2xl mx-auto p-4 pt-24 hidden pb-20">
         <header class="flex justify-between items-center mb-6 bg-white dark:bg-zinc-900 p-6 rounded-2xl shadow-sm border dark:border-zinc-700 text-center">
             <h1 class="text-xl font-bold">Meus <span class="text-blue-600">Lotes</span></h1>
@@ -395,6 +532,55 @@
 
         <div id="packageList" class="bg-white dark:bg-zinc-900 rounded-2xl shadow-sm border dark:border-zinc-700 divide-y dark:divide-zinc-800 max-h-[500px] overflow-y-auto no-scrollbar">
             <div class="p-12 text-center text-slate-400 italic text-sm">Lista vazia.</div>
+        </div>
+    </main>
+
+    <!-- VIEW: ADMIN INTEGRADO -->
+    <main id="view-admin" class="w-full max-w-4xl mx-auto p-4 pt-24 hidden pb-20">
+        <header class="flex flex-col gap-2 mb-6 text-center">
+            <h1 class="text-2xl font-bold"><i class="fas fa-shield-halved text-blue-500"></i> Painel Administrativo</h1>
+            <p class="text-xs text-gray-500 uppercase font-bold tracking-widest">Controle Central de Entregadores</p>
+        </header>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <!-- Sidebar Usuários -->
+            <div class="md:col-span-1 bg-white dark:bg-zinc-900 rounded-2xl border dark:border-zinc-700 overflow-hidden flex flex-col h-[500px]">
+                <div class="p-3 border-b dark:border-zinc-800">
+                    <input type="text" oninput="window.filterAdminUsers(this.value)" placeholder="Buscar entregador..." class="w-full p-2 text-xs bg-gray-100 dark:bg-zinc-800 rounded-lg outline-none border border-transparent focus:border-blue-500">
+                </div>
+                <div id="adminUserList" class="flex-1 overflow-y-auto custom-scrollbar"></div>
+            </div>
+
+            <!-- Detalhes e Monitor -->
+            <div class="md:col-span-2 space-y-4">
+                <div id="admin-user-detail" class="hidden">
+                    <div class="bg-white dark:bg-zinc-900 p-5 rounded-2xl border dark:border-zinc-700 shadow-sm">
+                        <div class="flex justify-between items-start mb-4">
+                            <div>
+                                <h2 id="admin-selected-name" class="text-xl font-bold">...</h2>
+                                <p id="admin-selected-email" class="text-[10px] text-gray-500 font-bold">...</p>
+                            </div>
+                            <button id="admin-block-btn" class="px-3 py-1 bg-yellow-600 text-white rounded-lg text-[10px] font-bold shadow-md uppercase">Bloquear</button>
+                        </div>
+                        
+                        <div class="grid grid-cols-4 gap-2 text-center mb-4">
+                            <div class="bg-blue-500/10 p-2 rounded-xl"><span class="text-[7px] font-bold text-blue-500 uppercase">Rota</span><p id="adm-det-pending" class="text-sm font-black">0</p></div>
+                            <div class="bg-green-500/10 p-2 rounded-xl"><span class="text-[7px] font-bold text-green-500 uppercase">OK</span><p id="adm-det-ok" class="text-sm font-black">0</p></div>
+                            <div class="bg-red-500/10 p-2 rounded-xl"><span class="text-[7px] font-bold text-red-500 uppercase">Falta</span><p id="adm-det-missing" class="text-sm font-black">0</p></div>
+                            <div class="bg-zinc-500/10 p-2 rounded-xl"><span class="text-[7px] font-bold text-gray-500 uppercase">Perdido</span><p id="adm-det-lost" class="text-sm font-black">0</p></div>
+                        </div>
+
+                        <div id="adminPackageTable" class="divide-y dark:divide-zinc-800 max-h-[300px] overflow-y-auto custom-scrollbar border dark:border-zinc-800 rounded-xl">
+                            <p class="p-8 text-center text-gray-500 text-xs italic">Carregando pacotes...</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="admin-empty-state" class="flex flex-col items-center justify-center h-[500px] bg-white/50 dark:bg-white/5 rounded-2xl border border-dashed dark:border-zinc-800 opacity-50">
+                    <i class="fas fa-user-gear text-5xl mb-4"></i>
+                    <p class="text-sm font-bold">Selecione um entregador ao lado</p>
+                </div>
+            </div>
         </div>
     </main>
 
@@ -438,8 +624,13 @@
         function switchView(v) {
             document.getElementById('view-zap').classList.add('hidden');
             document.getElementById('view-scan').classList.add('hidden');
+            document.getElementById('view-admin').classList.add('hidden');
             document.getElementById('view-' + v).classList.remove('hidden');
             stopCamera();
+            if (v === 'admin') {
+                document.getElementById('admin-empty-state').classList.remove('hidden');
+                document.getElementById('admin-user-detail').classList.add('hidden');
+            }
         }
 
         function startNewBatch(mode) {
