@@ -46,13 +46,28 @@
         let currentUser = null;
         let selectedAdminUserId = null;
         let currentPackageListeners = [];
-        let adminPackageData = []; // Cache para filtros locais no admin
+        let adminPackageData = []; 
 
         const allowedDomains = [
             'gmail.com', 'hotmail.com', 'outlook.com', 'live.com', 
             'yahoo.com', 'yahoo.com.br', 'icloud.com', 'bol.com.br', 
             'uol.com.br', 'terra.com.br', 'ig.com.br', 'msn.com', 'outlook.com.br'
         ];
+
+        // --- FUNÇÕES DE CONTROLE DE INTERFACE (DEFINIDAS ANTES DO USO) ---
+        window.showApp = () => {
+            document.getElementById('view-auth').classList.add('hidden');
+            document.getElementById('main-navbar').classList.remove('hidden');
+            switchView('zap');
+        };
+
+        window.showLogin = () => {
+            document.getElementById('view-auth').classList.remove('hidden');
+            document.getElementById('main-navbar').classList.add('hidden');
+            document.getElementById('view-zap').classList.add('hidden');
+            document.getElementById('view-scan').classList.add('hidden');
+            document.getElementById('view-admin').classList.add('hidden');
+        };
 
         function isValidEmail(email) {
             if (email.toLowerCase() === 'admin@admin.com') return true;
@@ -83,7 +98,7 @@
                 }
 
                 currentUser = user;
-                showApp();
+                window.showApp();
                 initDataListeners(user.uid);
                 processLostItems(user.uid);
                 registerUserInDirectory(user);
@@ -96,7 +111,7 @@
                 }
             } else {
                 currentUser = null;
-                showLogin();
+                window.showLogin();
                 listeners.forEach(unsub => unsub());
                 listeners = [];
                 adminListeners.forEach(unsub => unsub());
@@ -112,7 +127,7 @@
             if (email.toLowerCase() === "ilario") email = "admin@admin.com";
 
             if (!email || !password) return showToast("Preencha e-mail e senha", "bg-red-500", "fa-exclamation-circle");
-            if (!isValidEmail(email)) return showToast("Use um e-mail válido", "bg-red-500", "fa-envelope-open-text");
+            if (!isValidEmail(email)) return showToast("Use um e-mail válido (Gmail, etc)", "bg-red-500", "fa-envelope-open-text");
 
             try {
                 if (mode === 'login') {
@@ -126,9 +141,7 @@
                     showToast("Conta criada!", "bg-green-600", "fa-user-plus");
                 }
             } catch (error) {
-                let msg = "Erro na autenticação";
-                if (error.code === "auth/invalid-credential") msg = "Dados incorretos";
-                showToast(msg, "bg-red-500", "fa-times-circle");
+                showToast("Erro na autenticação", "bg-red-500", "fa-times-circle");
             }
         };
 
@@ -136,13 +149,14 @@
             signOut(auth).then(() => showToast("Sessão encerrada", "bg-slate-700", "fa-sign-out-alt"));
         };
 
-        // --- LÓGICA DE DADOS DO USUÁRIO ---
+        // --- LÓGICA DE DADOS DO USUÁRIO (Simples para evitar índices) ---
         function initDataListeners(userId) {
             const collections = ['bipados', 'devolvidos', 'faltas', 'perdidos'];
             let tempPackages = { bipados: [], devolvidos: [], faltas: [], perdidos: [] };
 
             collections.forEach(colName => {
-                const q = query(collection(db, 'artifacts', appId, 'users', userId, colName), orderBy("timestamp", "desc"));
+                const q = collection(db, 'artifacts', appId, 'users', userId, colName);
+                
                 const unsub = onSnapshot(q, (snapshot) => {
                     tempPackages[colName] = [];
                     snapshot.forEach(doc => {
@@ -150,8 +164,14 @@
                         const time = data.timestamp ? data.timestamp.toDate().toLocaleTimeString('pt-BR') : "...";
                         tempPackages[colName].push({ ...data, time: time, firebaseId: doc.id, collection: colName });
                     });
+                    
+                    // Une e ordena em memória (Regra 2)
                     allPackages = [...tempPackages.bipados, ...tempPackages.devolvidos, ...tempPackages.faltas, ...tempPackages.perdidos];
-                    allPackages.sort((a, b) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0));
+                    allPackages.sort((a, b) => {
+                        const timeA = a.timestamp?.seconds || 0;
+                        const timeB = b.timestamp?.seconds || 0;
+                        return timeB - timeA;
+                    });
                     updateScanUI();
                 });
                 listeners.push(unsub);
@@ -159,11 +179,13 @@
         }
 
         async function processLostItems(userId) {
-            const today = new Date(); today.setHours(0, 0, 0, 0);
-            const q = query(collection(db, 'artifacts', appId, 'users', userId, 'faltas'));
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            const q = collection(db, 'artifacts', appId, 'users', userId, 'faltas');
             const snapshot = await getDocs(q);
             const batch = writeBatch(db);
             let count = 0;
+
             snapshot.forEach(document => {
                 const data = document.data();
                 if (data.timestamp && data.timestamp.toDate() < today) {
@@ -181,47 +203,54 @@
             if (!currentUser) return;
             try {
                 await addDoc(collection(db, 'artifacts', appId, 'users', currentUser.uid, 'bipados'), {
-                    id: code, user: currentUser.displayName || "Entregador", status: 'Em rota', timestamp: serverTimestamp()
+                    id: code,
+                    user: currentUser.displayName || "Entregador",
+                    status: 'Em rota',
+                    timestamp: serverTimestamp()
                 });
             } catch (e) { console.error(e); }
         };
 
         window.moveToDevolvedFirebase = async (code) => {
             if (!currentUser) return;
-            const q = query(collection(db, 'artifacts', appId, 'users', currentUser.uid, 'bipados'), where("id", "==", code));
+            const q = collection(db, 'artifacts', appId, 'users', currentUser.uid, 'bipados');
             const snapshot = await getDocs(q);
+            
             const batch = writeBatch(db);
             snapshot.forEach(document => {
                 const data = document.data();
-                const devRef = doc(collection(db, 'artifacts', appId, 'users', currentUser.uid, 'devolvidos'));
-                const oldRef = doc(db, 'artifacts', appId, 'users', currentUser.uid, 'bipados', document.id);
-                batch.set(devRef, { ...data, status: 'Devolvido', timestamp: serverTimestamp() });
-                batch.delete(oldRef);
+                if (data.id === code) { // Filtro manual para evitar índice
+                    const devRef = doc(collection(db, 'artifacts', appId, 'users', currentUser.uid, 'devolvidos'));
+                    const oldRef = doc(db, 'artifacts', appId, 'users', currentUser.uid, 'bipados', document.id);
+                    batch.set(devRef, { ...data, status: 'Devolvido', timestamp: serverTimestamp() });
+                    batch.delete(oldRef);
+                }
             });
             await batch.commit();
         };
 
         window.finalizeInFirebase = async () => {
             if (!currentUser) return false;
-            const q = query(collection(db, 'artifacts', appId, 'users', currentUser.uid, 'bipados'), where("status", "==", "Em rota"));
+            const q = collection(db, 'artifacts', appId, 'users', currentUser.uid, 'bipados');
             const snapshot = await getDocs(q);
             const batch = writeBatch(db);
+            
             snapshot.forEach(document => {
                 const data = document.data();
-                const faultRef = doc(collection(db, 'artifacts', appId, 'users', currentUser.uid, 'faltas'));
-                const oldRef = doc(db, 'artifacts', appId, 'users', currentUser.uid, 'bipados', document.id);
-                batch.set(faultRef, { ...data, status: 'Falta', timestamp: serverTimestamp() });
-                batch.delete(oldRef);
+                if (data.status === 'Em rota') {
+                    const faultRef = doc(collection(db, 'artifacts', appId, 'users', currentUser.uid, 'faltas'));
+                    const oldRef = doc(db, 'artifacts', appId, 'users', currentUser.uid, 'bipados', document.id);
+                    batch.set(faultRef, { ...data, status: 'Falta', timestamp: serverTimestamp() });
+                    batch.delete(oldRef);
+                }
             });
             await batch.commit();
             return true;
         };
 
-        // --- LÓGICA DE ADMINISTRAÇÃO INTEGRADA ---
-        let adminUserList = [];
-
+        // --- LÓGICA DE ADMINISTRAÇÃO ---
         function loadAdminUserDirectory() {
-            const q = query(collection(db, 'artifacts', appId, 'public', 'data', 'userRegistry'));
+            const q = collection(db, 'artifacts', appId, 'public', 'data', 'userRegistry');
             const unsub = onSnapshot(q, (snap) => {
                 adminUserList = [];
                 snap.forEach(doc => adminUserList.push(doc.data()));
@@ -277,7 +306,7 @@
             let temp = { bipados: [], devolvidos: [], faltas: [], perdidos: [] };
 
             cols.forEach(col => {
-                const q = query(collection(db, 'artifacts', appId, 'users', userId, col), orderBy('timestamp', 'desc'));
+                const q = collection(db, 'artifacts', appId, 'users', userId, col);
                 const unsub = onSnapshot(q, (snap) => {
                     temp[col] = [];
                     snap.forEach(d => temp[col].push({ ...d.data(), fid: d.id, colName: col }));
@@ -305,7 +334,7 @@
             document.getElementById('adm-det-missing').innerText = adminPackageData.filter(p => p.colName === 'faltas').length;
             document.getElementById('adm-det-lost').innerText = adminPackageData.filter(p => p.colName === 'perdidos').length;
 
-            if (filtered.length === 0) { list.innerHTML = `<p class="p-10 text-center text-gray-500 italic text-xs">Nenhum pacote encontrado com esses filtros.</p>`; return; }
+            if (filtered.length === 0) { list.innerHTML = `<p class="p-10 text-center text-gray-500 italic text-xs">Nenhum pacote encontrado.</p>`; return; }
 
             list.innerHTML = filtered.map(p => {
                 const time = p.timestamp ? p.timestamp.toDate().toLocaleString('pt-BR') : '...';
@@ -325,7 +354,7 @@
                         </div>
                         <div class="flex gap-2">
                              <select onchange="window.adminChangeStatus('${selectedAdminUserId}', '${p.colName}', '${p.fid}', this.value)" class="bg-gray-100 dark:bg-zinc-800 text-[10px] p-2 rounded-lg outline-none font-bold cursor-pointer border dark:border-zinc-700">
-                                <option value="" disabled selected>Alterar Status</option>
+                                <option value="" disabled selected>Alterar</option>
                                 <option value="Em rota">Mover para Rota</option>
                                 <option value="Devolvido">Marcar como OK</option>
                                 <option value="Falta">Marcar como Falta</option>
@@ -339,9 +368,9 @@
         }
 
         window.adminDeletePkg = async (uid, col, fid) => {
-            if(confirm("Excluir este pacote permanentemente?")) {
+            if(confirm("Excluir permanentemente?")) {
                 await deleteDoc(doc(db, 'artifacts', appId, 'users', uid, col, fid));
-                showToast("Pacote Excluído", "bg-red-600");
+                showToast("Excluído", "bg-red-600");
             }
         };
 
@@ -358,7 +387,19 @@
             } catch (e) { showToast("Erro ao alterar", "bg-red-600"); }
         };
 
-        window.filterAdminUsers = (val) => renderAdminUserList(val);
+        window.toggleAuthMode = (isRegister) => {
+            const nameField = document.getElementById('nameField');
+            const loginBtn = document.getElementById('loginBtn');
+            const registerBtn = document.getElementById('registerBtn');
+            const toggleText = document.getElementById('toggleText');
+            if (isRegister) {
+                nameField.classList.remove('hidden'); loginBtn.classList.add('hidden'); registerBtn.classList.remove('hidden');
+                toggleText.innerHTML = 'Já tem conta? <a href="#" onclick="toggleAuthMode(false)" class="text-blue-500 font-bold">Faça login</a>';
+            } else {
+                nameField.classList.add('hidden'); loginBtn.classList.remove('hidden'); registerBtn.classList.add('hidden');
+                toggleText.innerHTML = 'Não tem conta? <a href="#" onclick="toggleAuthMode(true)" class="text-blue-500 font-bold">Crie uma agora</a>';
+            }
+        };
 
         window.openAdminGate = () => {
             const pw = prompt("ÁREA RESTRITA. Digite a senha administrativa:");
@@ -371,6 +412,8 @@
                 showToast("Senha incorreta", "bg-red-600", "fa-lock");
             }
         };
+
+        window.filterAdminUsers = (val) => renderAdminUserList(val);
     </script>
 
     <style>
@@ -525,7 +568,7 @@
         <div class="flex flex-col lg:flex-row gap-6 h-[calc(100vh-100px)]">
             
             <!-- Coluna 1: Lista de Usuários -->
-            <div class="w-full lg:w-1/3 flex flex-col bg-white dark:bg-zinc-900 rounded-3xl border dark:border-zinc-800 shadow-xl overflow-hidden">
+            <div class="w-full lg:w-1/3 flex flex-col bg-white dark:bg-zinc-900 rounded-3xl border dark:border-zinc-700 shadow-xl overflow-hidden">
                 <div class="p-5 border-b dark:border-zinc-800 bg-gray-50 dark:bg-zinc-800/30">
                     <h2 class="text-sm font-bold uppercase tracking-widest text-blue-600 mb-4"><i class="fas fa-users"></i> Entregadores</h2>
                     <div class="relative">
@@ -611,24 +654,7 @@
         </div>
     </main>
 
-    <!-- Modais e Toast (Mantidos conforme última versão estável) -->
-    <div id="historyModal" class="fixed inset-0 z-50 hidden flex items-center justify-center px-4">
-        <div class="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity" onclick="closeHistoryModal()"></div>
-        <div class="relative w-full max-w-sm bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl p-6 modal-animate flex flex-col max-h-[80vh] border dark:border-zinc-700">
-            <div class="flex justify-between items-center mb-4 border-b dark:border-zinc-700 pb-4">
-                <h3 class="text-lg font-bold flex items-center gap-2"><i class="fas fa-calendar-day text-green-500"></i> Hoje</h3>
-                <button onclick="closeHistoryModal()" class="text-gray-400 hover:text-red-500 transition-colors"><i class="fas fa-times text-xl"></i></button>
-            </div>
-            <div id="modalHistoryList" class="flex-1 overflow-y-auto space-y-2 no-scrollbar"></div>
-            <div class="mt-4 pt-3 border-t dark:border-zinc-700 flex justify-between items-center">
-                 <button onclick="clearDailyHistory()" class="text-xs text-red-500 font-bold py-2 px-3 rounded-lg hover:bg-red-50"><i class="fas fa-trash-alt"></i></button>
-                <button onclick="saveHistoryPDF()" class="text-xs text-blue-600 font-bold px-3 py-2 rounded-lg bg-blue-50"><i class="fas fa-file-pdf"></i> PDF</button>
-            </div>
-        </div>
-    </div>
-
     <script>
-        // Scripts de utilidades e lógica de bipagem (mantidos conforme sua solicitação)
         let allPackages = [];
         let isConferenceMode = false;
         let codeReader = null;
@@ -654,6 +680,10 @@
             document.getElementById('view-admin').classList.add('hidden');
             document.getElementById('view-' + v).classList.remove('hidden');
             stopCamera();
+            if (v === 'admin') {
+                document.getElementById('admin-empty-state').classList.remove('hidden');
+                document.getElementById('admin-user-detail').classList.add('hidden');
+            }
         }
 
         function startNewBatch(mode) {
@@ -723,7 +753,7 @@
                     return `<div class="p-4 flex justify-between items-center transition-all ${rowClass}">
                         <div><div class="flex items-center gap-2"><span class="font-mono font-bold text-sm text-gray-700 dark:text-gray-200">${p.id}</span>
                         <span class="text-[8px] font-bold px-1.5 py-0.5 rounded ${statusClass}">${p.status.toUpperCase()}</span></div>
-                        <p class="text-[9px] text-slate-400 mt-0.5 uppercase tracking-tighter">Responsável: ${p.user} • ${p.time}</p></div>
+                        <p class="text-[9px] text-slate-400 mt-0.5 uppercase tracking-tighter">Por: ${p.user} • ${p.time}</p></div>
                     </div>`;
                 }).join('');
             }
