@@ -25,7 +25,7 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
         import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, onAuthStateChanged, signOut, updateProfile } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
-        import { getFirestore, collection, addDoc, serverTimestamp, query, onSnapshot, orderBy, updateDoc, doc, getDocs, where, writeBatch } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+        import { getFirestore, collection, addDoc, serverTimestamp, query, onSnapshot, orderBy, updateDoc, doc, getDocs, where, writeBatch, deleteDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
         const firebaseConfig = {
             apiKey: "AIzaSyC05tYoKOHOBf6pNhhmMqgSap1g3iB4Im4",
@@ -41,10 +41,9 @@
         const db = getFirestore(app);
         const appId = "logistica-pacotes";
 
-        let unsubscribeSnapshot = null;
+        let listeners = [];
         let currentUser = null;
 
-        // Lista de domínios permitidos
         const allowedDomains = [
             'gmail.com', 'hotmail.com', 'outlook.com', 'live.com', 
             'yahoo.com', 'yahoo.com.br', 'icloud.com', 'bol.com.br', 
@@ -56,137 +55,154 @@
             return allowedDomains.includes(domain?.toLowerCase());
         }
 
-        // Gestão de Autenticação
         onAuthStateChanged(auth, (user) => {
             if (user) {
                 currentUser = user;
                 showApp();
-                initDataListener(user.uid);
-                // Atualiza o nome na tela
+                initDataListeners(user.uid);
+                processLostItems(user.uid);
                 const nameElements = document.querySelectorAll('.user-display-name');
                 nameElements.forEach(el => el.innerText = user.displayName || "Usuário");
             } else {
                 currentUser = null;
                 showLogin();
-                if (unsubscribeSnapshot) unsubscribeSnapshot();
+                listeners.forEach(unsub => unsub());
+                listeners = [];
             }
         });
 
-        // Funções de Auth
         window.handleAuth = async (mode) => {
             const email = document.getElementById('authEmail').value.trim();
             const password = document.getElementById('authPassword').value;
             const name = document.getElementById('authName').value.trim();
 
             if (!email || !password) return showToast("Preencha e-mail e senha", "bg-red-500", "fa-exclamation-circle");
-            
-            if (!isValidEmail(email)) {
-                return showToast("Use um e-mail válido (Gmail, Hotmail, etc)", "bg-red-500", "fa-envelope-open-text");
-            }
+            if (!isValidEmail(email)) return showToast("Use um e-mail válido", "bg-red-500", "fa-envelope-open-text");
 
             try {
                 if (mode === 'login') {
                     await signInWithEmailAndPassword(auth, email, password);
                     showToast("Bem-vindo de volta!", "bg-green-600", "fa-check");
                 } else {
-                    if (!name) return showToast("Digite o seu nome para o registo", "bg-red-500", "fa-user-tag");
-                    
+                    if (!name) return showToast("Digite seu nome", "bg-red-500", "fa-user-tag");
                     const userCredential = await createUserWithEmailAndPassword(auth, email, password);
                     await updateProfile(userCredential.user, { displayName: name });
                     showToast("Conta criada com sucesso!", "bg-green-600", "fa-user-plus");
                 }
             } catch (error) {
-                let msg = "Erro na autenticação";
-                if (error.code === 'auth/weak-password') msg = "Senha demasiado fraca (mín. 6 caracteres)";
-                if (error.code === 'auth/email-already-in-use') msg = "E-mail já registado";
-                if (error.code === 'auth/invalid-credential') msg = "E-mail ou senha incorretos";
-                showToast(msg, "bg-red-500", "fa-times-circle");
+                showToast("Erro na autenticação", "bg-red-500", "fa-times-circle");
             }
         };
 
         window.logout = () => {
-            signOut(auth).then(() => {
-                showToast("Sessão encerrada", "bg-slate-700", "fa-sign-out-alt");
-            });
+            signOut(auth).then(() => showToast("Sessão encerrada", "bg-slate-700", "fa-sign-out-alt"));
         };
 
-        // Listener Real-time Individualizado
-        function initDataListener(userId) {
-            const q = query(
-                collection(db, 'artifacts', appId, 'users', userId, 'bipados'), 
-                orderBy("timestamp", "desc")
-            );
-            
-            unsubscribeSnapshot = onSnapshot(q, (snapshot) => {
-                allPackages = [];
-                snapshot.forEach((doc) => {
-                    const data = doc.data();
-                    const time = data.timestamp ? data.timestamp.toDate().toLocaleTimeString('pt-BR') : "...";
-                    allPackages.push({ ...data, time: time });
+        // Escuta múltiplas coleções para montar a lista unificada
+        function initDataListeners(userId) {
+            const collections = ['bipados', 'devolvidos', 'faltas', 'perdidos'];
+            let tempPackages = { bipados: [], devolvidos: [], faltas: [], perdidos: [] };
+
+            collections.forEach(colName => {
+                const q = query(
+                    collection(db, 'artifacts', appId, 'users', userId, colName), 
+                    orderBy("timestamp", "desc")
+                );
+                
+                const unsub = onSnapshot(q, (snapshot) => {
+                    tempPackages[colName] = [];
+                    snapshot.forEach(doc => {
+                        const data = doc.data();
+                        const time = data.timestamp ? data.timestamp.toDate().toLocaleTimeString('pt-BR') : "...";
+                        tempPackages[colName].push({ ...data, time: time, firebaseId: doc.id, collection: colName });
+                    });
+                    // Combina e atualiza UI
+                    allPackages = [...tempPackages.bipados, ...tempPackages.devolvidos, ...tempPackages.faltas, ...tempPackages.perdidos];
+                    // Ordena por timestamp real
+                    allPackages.sort((a, b) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0));
+                    updateScanUI();
                 });
-                updateScanUI();
+                listeners.push(unsub);
             });
         }
 
-        // Salvar novo pacote (Em rota)
-        window.saveToFirebase = async (code, status) => {
+        // Move itens de Falta para Perdido se passou da meia-noite
+        async function processLostItems(userId) {
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+
+            const q = query(collection(db, 'artifacts', appId, 'users', userId, 'faltas'));
+            const snapshot = await getDocs(q);
+            
+            const batch = writeBatch(db);
+            let count = 0;
+
+            snapshot.forEach(document => {
+                const data = document.data();
+                if (data.timestamp && data.timestamp.toDate() < today) {
+                    const lostRef = doc(collection(db, 'artifacts', appId, 'users', userId, 'perdidos'));
+                    const oldRef = doc(db, 'artifacts', appId, 'users', userId, 'faltas', document.id);
+                    
+                    batch.set(lostRef, { ...data, status: 'Perdido', movedAt: serverTimestamp() });
+                    batch.delete(oldRef);
+                    count++;
+                }
+            });
+
+            if (count > 0) {
+                await batch.commit();
+                console.log(`${count} itens movidos para Perdidos.`);
+            }
+        }
+
+        // Salvar novo pacote (Bipado / Em rota)
+        window.saveToFirebase = async (code) => {
             if (!currentUser) return;
             try {
                 await addDoc(collection(db, 'artifacts', appId, 'users', currentUser.uid, 'bipados'), {
                     id: code,
                     user: currentUser.displayName || "Entregador",
-                    status: status,
+                    status: 'Em rota',
                     timestamp: serverTimestamp()
                 });
-            } catch (e) {
-                console.error("Erro Firebase:", e);
-                showToast("Erro ao guardar dados", "bg-red-500", "fa-cloud-slash");
-            }
+            } catch (e) { console.error(e); }
         };
 
-        // Atualizar Status Unitário
-        window.updateStatusFirebase = async (code, newStatus) => {
+        // Devolver: Tira de bipados e move para devolvidos
+        window.moveToDevolvedFirebase = async (code) => {
             if (!currentUser) return;
-            try {
-                const q = query(
-                    collection(db, 'artifacts', appId, 'users', currentUser.uid, 'bipados'), 
-                    where("id", "==", code)
-                );
-                const querySnapshot = await getDocs(q);
-                querySnapshot.forEach(async (document) => {
-                    const docRef = doc(db, 'artifacts', appId, 'users', currentUser.uid, 'bipados', document.id);
-                    await updateDoc(docRef, { 
-                        status: newStatus,
-                        lastUpdate: serverTimestamp()
-                    });
-                });
-            } catch (e) {
-                console.error("Erro ao atualizar:", e);
-            }
+            const q = query(collection(db, 'artifacts', appId, 'users', currentUser.uid, 'bipados'), where("id", "==", code));
+            const snapshot = await getDocs(q);
+            
+            const batch = writeBatch(db);
+            snapshot.forEach(document => {
+                const data = document.data();
+                const devRef = doc(collection(db, 'artifacts', appId, 'users', currentUser.uid, 'devolvidos'));
+                const oldRef = doc(db, 'artifacts', appId, 'users', currentUser.uid, 'bipados', document.id);
+                
+                batch.set(devRef, { ...data, status: 'Devolvido', updateTime: serverTimestamp() });
+                batch.delete(oldRef);
+            });
+            await batch.commit();
         };
 
-        // Finalizar: Transformar 'Em rota' em 'Falta' (Somente os que não foram devolvidos)
+        // Finalizar: Tira de bipados e move para faltas
         window.finalizeInFirebase = async () => {
             if (!currentUser) return false;
-            try {
-                const q = query(
-                    collection(db, 'artifacts', appId, 'users', currentUser.uid, 'bipados'), 
-                    where("status", "==", "Em rota")
-                );
-                const querySnapshot = await getDocs(q);
-                const batch = writeBatch(db);
+            const q = query(collection(db, 'artifacts', appId, 'users', currentUser.uid, 'bipados'), where("status", "==", "Em rota"));
+            const snapshot = await getDocs(q);
+            
+            const batch = writeBatch(db);
+            snapshot.forEach(document => {
+                const data = document.data();
+                const faultRef = doc(collection(db, 'artifacts', appId, 'users', currentUser.uid, 'faltas'));
+                const oldRef = doc(db, 'artifacts', appId, 'users', currentUser.uid, 'bipados', document.id);
                 
-                querySnapshot.forEach((document) => {
-                    const docRef = doc(db, 'artifacts', appId, 'users', currentUser.uid, 'bipados', document.id);
-                    batch.update(docRef, { status: "Falta" });
-                });
-
-                await batch.commit();
-                return true;
-            } catch (e) {
-                console.error("Erro ao finalizar:", e);
-                return false;
-            }
+                batch.set(faultRef, { ...data, status: 'Falta', finalizeTime: serverTimestamp() });
+                batch.delete(oldRef);
+            });
+            await batch.commit();
+            return true;
         };
 
         function showApp() {
@@ -200,26 +216,18 @@
             document.getElementById('main-navbar').classList.add('hidden');
             document.getElementById('view-zap').classList.add('hidden');
             document.getElementById('view-scan').classList.add('hidden');
-            document.getElementById('sideMenu').classList.add('-translate-x-full');
-            document.getElementById('menuOverlay').classList.add('hidden');
         }
 
-        // Função para mostrar campo de nome apenas no registro
         window.toggleAuthMode = (isRegister) => {
             const nameField = document.getElementById('nameField');
             const loginBtn = document.getElementById('loginBtn');
             const registerBtn = document.getElementById('registerBtn');
             const toggleText = document.getElementById('toggleText');
-
             if (isRegister) {
-                nameField.classList.remove('hidden');
-                loginBtn.classList.add('hidden');
-                registerBtn.classList.remove('hidden');
+                nameField.classList.remove('hidden'); loginBtn.classList.add('hidden'); registerBtn.classList.remove('hidden');
                 toggleText.innerHTML = 'Já tem conta? <a href="#" onclick="toggleAuthMode(false)" class="text-blue-500 font-bold">Faça login</a>';
             } else {
-                nameField.classList.add('hidden');
-                loginBtn.classList.remove('hidden');
-                registerBtn.classList.add('hidden');
+                nameField.classList.add('hidden'); loginBtn.classList.remove('hidden'); registerBtn.classList.add('hidden');
                 toggleText.innerHTML = 'Não tem conta? <a href="#" onclick="toggleAuthMode(true)" class="text-blue-500 font-bold">Crie uma agora</a>';
             }
         };
@@ -233,6 +241,7 @@
         .row-done { background-color: rgba(34, 197, 94, 0.1) !important; border-left: 4px solid #22c55e !important; }
         .row-missing { background-color: rgba(239, 68, 68, 0.1) !important; border-left: 4px solid #ef4444 !important; }
         .row-route { background-color: rgba(59, 130, 246, 0.05) !important; border-left: 4px solid #3b82f6 !important; }
+        .row-lost { background-color: rgba(15, 15, 15, 0.4) !important; border-left: 4px solid #000 !important; opacity: 0.7; }
         @keyframes modalIn { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
         .modal-animate { animation: modalIn 0.2s ease-out forwards; }
     </style>
@@ -241,12 +250,11 @@
 
     <!-- Navbar -->
     <div id="main-navbar" class="fixed top-0 left-0 right-0 h-16 z-40 pointer-events-none hidden">
-        <button onclick="toggleMenu()" class="absolute top-4 left-4 w-10 h-10 rounded-full bg-white dark:bg-zinc-800 shadow-lg flex items-center justify-center text-gray-600 dark:text-gray-200 pointer-events-auto ring-1 ring-gray-200 dark:ring-gray-600"><i class="fas fa-bars"></i></button>
+        <button onclick="toggleMenu()" class="absolute top-4 left-4 w-10 h-10 rounded-full bg-white dark:bg-zinc-800 shadow-lg flex items-center justify-center text-gray-600 dark:text-gray-200 pointer-events-auto ring-1 ring-gray-200 dark:ring-gray-600 transition-transform active:scale-90"><i class="fas fa-bars"></i></button>
         
-        <!-- Identificador do Usuário na Tela -->
         <div class="absolute top-4 left-16 px-4 py-2 bg-white/80 dark:bg-zinc-800/80 backdrop-blur rounded-full shadow-sm ring-1 ring-gray-200 dark:ring-gray-700 pointer-events-auto flex items-center gap-2">
             <div class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-            <span class="user-display-name text-xs font-bold text-gray-700 dark:text-gray-200">Carregando...</span>
+            <span class="user-display-name text-xs font-bold text-gray-700 dark:text-gray-200">...</span>
         </div>
 
         <button onclick="toggleTheme()" class="absolute top-4 right-4 w-10 h-10 rounded-full bg-white dark:bg-zinc-800 shadow-lg flex items-center justify-center text-gray-600 dark:text-gray-200 pointer-events-auto ring-1 ring-gray-200 dark:ring-gray-600"><i id="themeIcon" class="fas fa-sun"></i></button>
@@ -255,7 +263,7 @@
     <!-- Sidebar -->
     <div id="menuOverlay" class="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 hidden opacity-0 transition-opacity duration-300" onclick="toggleMenu()"></div>
     <div id="sideMenu" class="fixed inset-y-0 left-0 w-64 bg-white dark:bg-zinc-900 shadow-2xl transform -translate-x-full transition-transform duration-300 ease-in-out z-50 flex flex-col border-r border-gray-200 dark:border-zinc-700">
-        <div class="p-6 border-b border-gray-100 dark:border-zinc-800 flex flex-col gap-1">
+        <div class="p-6 border-b border-gray-100 dark:border-zinc-800">
             <span class="text-[10px] font-bold text-blue-600 uppercase tracking-widest">Entregador</span>
             <h2 class="user-display-name font-bold text-lg text-gray-800 dark:text-white truncate">Usuário</h2>
         </div>
@@ -267,48 +275,40 @@
                 <div class="w-8 h-8 rounded-lg bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-600"><i class="fas fa-barcode"></i></div> Gestão de Lotes
             </a>
             <div class="mt-auto pt-4 border-t border-gray-100 dark:border-zinc-800">
-                <button onclick="logout()" class="flex items-center gap-3 p-3 w-full rounded-xl hover:bg-red-50 dark:hover:bg-red-900/20 text-red-600 transition-colors">
+                <button onclick="logout()" class="flex items-center gap-3 p-3 w-full rounded-xl hover:bg-red-50 dark:hover:bg-red-900/20 text-red-600 transition-colors font-bold">
                     <i class="fas fa-sign-out-alt"></i> Sair da Conta
                 </button>
             </div>
         </nav>
     </div>
 
-    <!-- VIEW: AUTH (Login/Registo) -->
+    <!-- VIEW: AUTH -->
     <main id="view-auth" class="flex-1 flex items-center justify-center p-6">
         <div class="w-full max-w-sm bg-white dark:bg-zinc-900 p-8 rounded-3xl shadow-2xl border border-gray-100 dark:border-zinc-800">
             <div class="text-center mb-8">
-                <div class="w-20 h-20 rounded-3xl bg-blue-600 flex items-center justify-center mx-auto mb-4 shadow-xl shadow-blue-500/20">
+                <div class="w-20 h-20 rounded-3xl bg-blue-600 flex items-center justify-center mx-auto mb-4 shadow-xl">
                     <i class="fas fa-truck-fast text-4xl text-white"></i>
                 </div>
                 <h1 class="text-2xl font-bold">Multiferramentas</h1>
                 <p class="text-sm text-gray-500 mt-1">Gestão de Entregas Cloud</p>
             </div>
-
             <div class="space-y-4">
                 <div id="nameField" class="hidden">
-                    <label class="block text-xs font-bold text-gray-400 uppercase ml-1 mb-1">Nome Completo</label>
+                    <label class="block text-[10px] font-bold text-gray-400 uppercase ml-1">Nome Completo</label>
                     <input type="text" id="authName" class="w-full bg-gray-50 dark:bg-zinc-800 p-4 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 border border-transparent dark:border-zinc-700" placeholder="Seu nome">
                 </div>
                 <div>
-                    <label class="block text-xs font-bold text-gray-400 uppercase ml-1 mb-1">E-mail</label>
+                    <label class="block text-[10px] font-bold text-gray-400 uppercase ml-1">E-mail</label>
                     <input type="email" id="authEmail" class="w-full bg-gray-50 dark:bg-zinc-800 p-4 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 border border-transparent dark:border-zinc-700" placeholder="exemplo@gmail.com">
                 </div>
                 <div>
-                    <label class="block text-xs font-bold text-gray-400 uppercase ml-1 mb-1">Senha</label>
+                    <label class="block text-[10px] font-bold text-gray-400 uppercase ml-1">Senha</label>
                     <input type="password" id="authPassword" class="w-full bg-gray-50 dark:bg-zinc-800 p-4 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 border border-transparent dark:border-zinc-700" placeholder="••••••••">
                 </div>
-
                 <div class="pt-2 space-y-3">
-                    <button id="loginBtn" onclick="handleAuth('login')" class="w-full bg-blue-600 hover:bg-blue-500 text-white py-4 rounded-xl font-bold shadow-lg shadow-blue-500/20 transition-all btn-pulse">
-                        Entrar
-                    </button>
-                    <button id="registerBtn" onclick="handleAuth('register')" class="w-full bg-blue-600 hover:bg-blue-500 text-white py-4 rounded-xl font-bold shadow-lg shadow-blue-500/20 transition-all btn-pulse hidden">
-                        Criar Conta
-                    </button>
-                    <p id="toggleText" class="text-center text-sm text-gray-500">
-                        Não tem conta? <a href="#" onclick="toggleAuthMode(true)" class="text-blue-500 font-bold">Crie uma agora</a>
-                    </p>
+                    <button id="loginBtn" onclick="handleAuth('login')" class="w-full bg-blue-600 hover:bg-blue-500 text-white py-4 rounded-xl font-bold transition-all btn-pulse">Entrar</button>
+                    <button id="registerBtn" onclick="handleAuth('register')" class="w-full bg-blue-600 hover:bg-blue-500 text-white py-4 rounded-xl font-bold transition-all btn-pulse hidden">Criar Conta</button>
+                    <p id="toggleText" class="text-center text-sm text-gray-500">Não tem conta? <a href="#" onclick="toggleAuthMode(true)" class="text-blue-500 font-bold">Crie uma agora</a></p>
                 </div>
             </div>
         </div>
@@ -317,35 +317,21 @@
     <!-- VIEW: ZAP SEM ADD -->
     <main id="view-zap" class="w-full max-w-md mx-auto p-6 pt-20 hidden flex-col justify-center min-h-screen pb-10">
         <div class="text-center mb-8">
-            <div class="inline-flex items-center justify-center w-20 h-20 rounded-full bg-green-100 dark:bg-green-900/30 mb-4 ring-1 ring-green-500/30 shadow-lg">
+            <div class="inline-flex items-center justify-center w-20 h-20 rounded-full bg-green-100 dark:bg-green-900/30 mb-4 shadow-lg ring-1 ring-green-500/30">
                 <i class="fab fa-whatsapp text-5xl text-green-600 dark:text-green-400"></i>
             </div>
             <h1 class="text-2xl font-bold">Zap Entregas</h1>
-            <p class="text-gray-500 text-sm mt-1">Contato rápido por Parada</p>
         </div>
-
         <div class="bg-white dark:bg-zinc-900 p-6 rounded-2xl border border-gray-200 dark:border-zinc-700 shadow-xl">
-            <div class="flex justify-between ml-1 mb-2">
-                <label class="text-xs font-bold text-gray-500 dark:text-gray-300 uppercase tracking-wider">Parada</label>
-                <label class="text-xs font-bold text-gray-500 dark:text-gray-300 uppercase tracking-wider mr-4">Telefone</label>
-            </div>
-            
             <div class="flex gap-3 mb-2">
-                <div class="w-24">
-                    <input type="number" id="stopInput" class="w-full bg-gray-100 dark:bg-zinc-800 text-center py-4 rounded-xl border border-transparent dark:border-zinc-700 focus:bg-white dark:focus:bg-zinc-700 focus:border-green-500 outline-none font-bold text-lg" placeholder="00">
-                </div>
-                <div class="flex-1 relative">
-                    <input type="tel" id="phoneInput" class="w-full bg-gray-100 dark:bg-zinc-800 px-4 py-4 rounded-xl border border-transparent dark:border-zinc-700 focus:bg-white dark:focus:bg-zinc-700 focus:border-green-500 outline-none font-mono text-center text-lg" placeholder="(11) 99999-9999">
-                </div>
+                <input type="number" id="stopInput" class="w-24 bg-gray-100 dark:bg-zinc-800 text-center py-4 rounded-xl border dark:border-zinc-700 font-bold text-lg" placeholder="00">
+                <input type="tel" id="phoneInput" class="flex-1 bg-gray-100 dark:bg-zinc-800 px-4 py-4 rounded-xl border dark:border-zinc-700 font-mono text-center text-lg" placeholder="(11) 99999-9999">
             </div>
-
             <div class="flex justify-between items-center px-1 mb-6">
                 <button onclick="pasteFromClipboard()" class="text-xs text-gray-500 hover:text-green-600 flex items-center gap-2 font-medium"><i class="far fa-clipboard"></i> Colar</button>
                 <button onclick="clearInputs()" class="text-xs text-gray-500 hover:text-red-500 flex items-center gap-2 font-medium"><i class="fas fa-trash-alt"></i> Apagar Tudo</button>
             </div>
-
             <textarea id="messageInput" class="w-full bg-gray-100 dark:bg-zinc-800 p-4 rounded-xl h-24 mb-4 resize-none text-sm outline-none">Olá. Entrega do Mercado Livre.</textarea>
-
             <button onclick="openWhatsapp()" class="w-full bg-green-600 hover:bg-green-500 text-white font-bold py-4 rounded-xl shadow-lg transition-all btn-pulse mb-4">Iniciar Conversa</button>
             <button onclick="openHistoryModal()" class="w-full bg-gray-200 dark:bg-zinc-800 hover:bg-gray-300 py-3 rounded-xl transition-all flex items-center justify-center gap-2 text-sm uppercase tracking-wider font-bold">Histórico do dia</button>
         </div>
@@ -355,23 +341,23 @@
     <main id="view-scan" class="w-full max-w-2xl mx-auto p-4 pt-24 hidden pb-20">
         <header class="flex justify-between items-center mb-6 bg-white dark:bg-zinc-900 p-6 rounded-2xl shadow-sm border border-gray-200 dark:border-zinc-700">
             <div>
-                <h1 class="text-2xl font-bold text-gray-800 dark:text-white">Meus <span class="text-blue-600">Lotes</span></h1>
+                <h1 class="text-2xl font-bold">Meus <span class="text-blue-600">Lotes</span></h1>
                 <p id="modeIndicator" class="text-[10px] font-bold uppercase tracking-widest text-slate-400 mt-1">Status: Aguardando</p>
             </div>
-            <button onclick="location.reload()" class="text-slate-400 hover:text-blue-500"><i class="fas fa-sync-alt text-xl"></i></button>
+            <button onclick="location.reload()" class="text-slate-400 hover:text-blue-500 transition-colors"><i class="fas fa-sync-alt text-xl"></i></button>
         </header>
 
         <div id="userSection" class="bg-blue-600 rounded-2xl p-6 shadow-lg text-white mb-6 hidden">
             <div class="flex justify-between items-center mb-4">
                 <div>
                     <span class="text-blue-100 text-[10px] font-bold uppercase tracking-widest">Sessão de Bipagem</span>
-                    <h2 id="currentUserName" class="text-xl font-bold italic">Ativa</h2>
+                    <h2 class="user-display-name text-xl font-bold italic">Ativa</h2>
                 </div>
                 <button onclick="finalizeOperation()" class="bg-white/20 hover:bg-white/40 px-4 py-2 rounded-xl font-bold text-sm border border-white/30 transition-all">Finalizar Procedimento</button>
             </div>
             <div class="flex gap-2">
                 <input type="text" id="barcodeInput" placeholder="Bipar código..." class="flex-1 p-4 bg-black/20 rounded-xl text-white outline-none placeholder-blue-100 font-mono">
-                <button onclick="handleManualInput()" class="bg-white text-blue-600 w-14 rounded-xl flex items-center justify-center shadow-lg"><i class="fas fa-plus"></i></button>
+                <button onclick="handleManualInput()" class="bg-white text-blue-600 w-14 rounded-xl flex items-center justify-center shadow-lg active:scale-90"><i class="fas fa-plus"></i></button>
             </div>
             <button onclick="toggleCamera()" id="camBtn" class="mt-4 w-full py-4 bg-black/20 rounded-xl font-bold flex items-center justify-center gap-3 border border-white/10 hover:bg-black/30 transition-all">
                 <i class="fas fa-camera"></i> <span id="camBtnText">Scanner Câmera</span>
@@ -382,8 +368,8 @@
             <div class="mb-4 bg-blue-50 dark:bg-blue-900/20 w-16 h-16 rounded-full flex items-center justify-center mx-auto text-blue-600"><i class="fas fa-box text-2xl"></i></div>
             <h3 class="text-xl font-bold mb-4">Operação de Lote</h3>
             <div class="flex gap-3">
-                <button onclick="startNewBatch('out')" class="flex-1 py-4 bg-blue-600 text-white rounded-2xl font-bold shadow-lg">Adicionar</button>
-                <button onclick="startNewBatch('return')" class="flex-1 py-4 bg-green-600 text-white rounded-2xl font-bold shadow-lg">Devolver</button>
+                <button onclick="startNewBatch('out')" class="flex-1 py-4 bg-blue-600 text-white rounded-2xl font-bold shadow-lg active:scale-95 transition-transform">Adicionar</button>
+                <button onclick="startNewBatch('return')" class="flex-1 py-4 bg-green-600 text-white rounded-2xl font-bold shadow-lg active:scale-95 transition-transform">Devolver</button>
             </div>
         </div>
 
@@ -396,24 +382,28 @@
             <button onclick="stopCamera()" class="absolute top-3 right-3 bg-red-500 text-white w-10 h-10 rounded-full flex items-center justify-center shadow-lg z-20"><i class="fas fa-times"></i></button>
         </div>
 
-        <div class="grid grid-cols-3 gap-3 my-6">
-            <div class="bg-white dark:bg-zinc-900 p-4 rounded-2xl border dark:border-zinc-700 text-center">
-                <span class="text-[9px] font-bold text-blue-500 uppercase">Em Rota</span>
-                <p id="statPending" class="text-xl font-bold">0</p>
+        <div class="grid grid-cols-4 gap-2 my-6">
+            <div class="bg-white dark:bg-zinc-900 p-3 rounded-xl border dark:border-zinc-700 text-center">
+                <span class="text-[8px] font-bold text-blue-500 uppercase">Em Rota</span>
+                <p id="statPending" class="text-lg font-bold">0</p>
             </div>
-            <div class="bg-white dark:bg-zinc-900 p-4 rounded-2xl border dark:border-zinc-700 text-center">
-                <span class="text-[9px] font-bold text-green-500 uppercase tracking-tighter">Devolvido</span>
-                <p id="statOk" class="text-xl font-bold">0</p>
+            <div class="bg-white dark:bg-zinc-900 p-3 rounded-xl border dark:border-zinc-700 text-center">
+                <span class="text-[8px] font-bold text-green-500 uppercase">OK</span>
+                <p id="statOk" class="text-lg font-bold">0</p>
             </div>
-            <div class="bg-white dark:bg-zinc-900 p-4 rounded-2xl border dark:border-zinc-700 text-center">
-                <span class="text-[9px] font-bold text-red-500 uppercase">Falta</span>
-                <p id="statMissing" class="text-xl font-bold">0</p>
+            <div class="bg-white dark:bg-zinc-900 p-3 rounded-xl border dark:border-zinc-700 text-center">
+                <span class="text-[8px] font-bold text-red-500 uppercase">Falta</span>
+                <p id="statMissing" class="text-lg font-bold">0</p>
+            </div>
+            <div class="bg-white dark:bg-zinc-900 p-3 rounded-xl border dark:border-zinc-700 text-center">
+                <span class="text-[8px] font-bold text-gray-500 uppercase">Perdido</span>
+                <p id="statLost" class="text-lg font-bold">0</p>
             </div>
         </div>
 
         <div class="bg-white dark:bg-zinc-900 rounded-2xl shadow-sm border dark:border-zinc-700 overflow-hidden">
             <div class="p-4 bg-slate-50 dark:bg-zinc-800 border-b dark:border-zinc-700 flex justify-between items-center text-[10px] font-bold uppercase tracking-widest text-gray-500">
-                <span>Registros Pessoais</span>
+                <span>Registros Sincronizados</span>
                 <span id="listCount" class="text-blue-600 bg-blue-50 dark:bg-blue-900/30 px-2 py-1 rounded">0 total</span>
             </div>
             <div id="packageList" class="divide-y dark:divide-zinc-800 max-h-[500px] overflow-y-auto no-scrollbar">
@@ -422,23 +412,22 @@
         </div>
     </main>
 
-    <!-- Modal Histórico (ZAP) -->
+    <!-- Modais e Toast (Mesmo que anterior) -->
     <div id="historyModal" class="fixed inset-0 z-50 hidden flex items-center justify-center px-4">
         <div class="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity" onclick="closeHistoryModal()"></div>
         <div class="relative w-full max-w-sm bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl p-6 modal-animate flex flex-col max-h-[80vh] border dark:border-zinc-700">
             <div class="flex justify-between items-center mb-4 border-b dark:border-zinc-700 pb-4">
                 <h3 class="text-lg font-bold flex items-center gap-2"><i class="fas fa-calendar-day text-green-500"></i> Hoje</h3>
-                <button onclick="closeHistoryModal()" class="text-gray-400 hover:text-red-500 transition-colors"><i class="fas fa-times text-xl"></i></button>
+                <button onclick="closeHistoryModal()" class="text-gray-400 hover:text-red-500"><i class="fas fa-times text-xl"></i></button>
             </div>
             <div id="modalHistoryList" class="flex-1 overflow-y-auto space-y-2 no-scrollbar"></div>
             <div class="mt-4 pt-3 border-t dark:border-zinc-700 flex justify-between items-center">
-                 <button onclick="clearDailyHistory()" class="text-xs text-red-500 font-bold uppercase py-2 px-3 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20"><i class="fas fa-trash-alt"></i></button>
-                <button onclick="saveHistoryPDF()" class="text-xs text-blue-600 font-bold uppercase px-3 py-2 rounded-lg bg-blue-50 dark:bg-blue-900/20"><i class="fas fa-file-pdf"></i> PDF</button>
+                 <button onclick="clearDailyHistory()" class="text-xs text-red-500 font-bold py-2 px-3 rounded-lg hover:bg-red-50"><i class="fas fa-trash-alt"></i></button>
+                <button onclick="saveHistoryPDF()" class="text-xs text-blue-600 font-bold px-3 py-2 rounded-lg bg-blue-50"><i class="fas fa-file-pdf"></i> PDF</button>
             </div>
         </div>
     </div>
 
-    <!-- Toast -->
     <div id="toast" class="fixed top-5 left-1/2 -translate-x-1/2 px-6 py-3 rounded-full shadow-2xl transition-all duration-300 opacity-0 z-[100] flex items-center gap-2 text-sm font-bold text-white pointer-events-none">
         <i id="toastIcon"></i> <span id="toastMsg"></span>
     </div>
@@ -449,12 +438,9 @@
         let codeReader = null;
         let isCameraActive = false;
         let audioCtx = null;
-
-        // Throttle para bipagem
         let lastScannedCode = '';
         let lastScannedTime = 0;
 
-        // UI Helpers
         function toggleTheme() {
             const isDark = document.documentElement.classList.toggle('dark');
             document.getElementById('themeIcon').className = isDark ? 'fas fa-sun' : 'fas fa-moon';
@@ -463,14 +449,8 @@
             const side = document.getElementById('sideMenu');
             const over = document.getElementById('menuOverlay');
             const isOpen = !side.classList.contains('-translate-x-full');
-            if(!isOpen) {
-                over.classList.remove('hidden');
-                setTimeout(() => { over.classList.remove('opacity-0'); side.classList.remove('-translate-x-full'); }, 10);
-            } else {
-                over.classList.add('opacity-0');
-                side.classList.add('-translate-x-full');
-                setTimeout(() => over.classList.add('hidden'), 300);
-            }
+            if(!isOpen) { over.classList.remove('hidden'); setTimeout(() => { over.classList.remove('opacity-0'); side.classList.remove('-translate-x-full'); }, 10); }
+            else { over.classList.add('opacity-0'); side.classList.add('-translate-x-full'); setTimeout(() => over.classList.add('hidden'), 300); }
         }
         function switchView(v) {
             document.getElementById('view-zap').classList.add('hidden');
@@ -479,7 +459,6 @@
             stopCamera();
         }
 
-        // Logic Lotes
         function startNewBatch(mode) {
             initAudio();
             isConferenceMode = (mode === 'return');
@@ -493,44 +472,33 @@
         async function processCode(code) {
             if(!code) return;
             initAudio();
-
-            // Intervalo de 4000ms para o mesmo código
             const now = Date.now();
-            if (code === lastScannedCode && (now - lastScannedTime) < 4000) {
-                return; // Ignora se bipar o mesmo item rápido demais
-            }
-            
-            lastScannedCode = code;
-            lastScannedTime = now;
+            if (code === lastScannedCode && (now - lastScannedTime) < 4000) return;
+            lastScannedCode = code; lastScannedTime = now;
 
             if(isConferenceMode) {
-                const pkg = allPackages.find(p => p.id === code);
+                const pkg = allPackages.find(p => p.id === code && p.collection === 'bipados');
                 if(pkg) {
-                    if(pkg.status === 'Devolvido') {
+                    await window.moveToDevolvedFirebase(code);
+                    showToast("Devolvido!", "bg-green-600", "fa-check");
+                    playBeep(true);
+                } else {
+                    const alreadyDevolved = allPackages.find(p => p.id === code && p.collection === 'devolvidos');
+                    if(alreadyDevolved) {
                         showToast("Já foi devolvido!", "bg-yellow-500", "fa-info-circle");
                         playBeep(false);
                     } else {
-                        await window.updateStatusFirebase(code, 'Devolvido');
-                        showToast("Devolvido!", "bg-green-600", "fa-check");
-                        playBeep(true);
+                        showToast("ERRO: Pacote não registrado!", "bg-red-600", "fa-times-circle");
+                        playBeep(false);
                     }
-                } else {
-                    showToast("ERRO: Pacote não registrado!", "bg-red-600", "fa-times-circle");
-                    playBeep(false);
                 }
             } else {
-                const pkg = allPackages.find(p => p.id === code);
-                if(pkg && pkg.status === 'Em rota') {
+                const existing = allPackages.find(p => p.id === code);
+                if(existing && existing.collection === 'bipados') {
                     showToast("Já está em rota!", "bg-yellow-500", "fa-info-circle");
                     playBeep(false);
-                } else if(pkg) {
-                    // Re-adição
-                    await window.updateStatusFirebase(code, 'Em rota');
-                    showToast("Re-adicionado à rota", "bg-blue-600", "fa-redo");
-                    playBeep(true);
                 } else {
-                    // Novo
-                    await window.saveToFirebase(code, 'Em rota');
+                    await window.saveToFirebase(code);
                     showToast("Adicionado em Rota", "bg-blue-600", "fa-plus");
                     playBeep(true);
                 }
@@ -538,49 +506,42 @@
         }
 
         async function finalizeOperation() {
-            const confirmMsg = isConferenceMode 
-                ? "Finalizar procedimento de devolução? Itens não devolvidos ficarão como 'Falta'."
-                : "Finalizar bipagem de saída?";
-
+            const confirmMsg = isConferenceMode ? "Finalizar devolução? Itens não devolvidos ficam como 'Falta'." : "Finalizar saída?";
             if(confirm(confirmMsg)) {
-                if (isConferenceMode) {
-                    const ok = await window.finalizeInFirebase();
-                    if(ok) {
-                        showToast("Procedimento Finalizado: Faltas processadas", "bg-slate-800", "fa-flag-checkered");
-                    }
-                } else {
-                    showToast("Lote de saída concluído", "bg-slate-800", "fa-check-double");
-                }
+                if (isConferenceMode) await window.finalizeInFirebase();
                 document.getElementById('userSection').classList.add('hidden');
                 document.getElementById('startSection').classList.remove('hidden');
                 stopCamera();
+                showToast("Concluído!", "bg-slate-800", "fa-flag-checkered");
             }
         }
 
         function updateScanUI() {
             const list = document.getElementById('packageList');
             if(allPackages.length === 0) {
-                list.innerHTML = `<p class="p-12 text-center text-slate-400 italic text-sm">Nenhum pacote registado.</p>`;
+                list.innerHTML = `<p class="p-12 text-center text-slate-400 italic text-sm">Lista vazia.</p>`;
             } else {
                 list.innerHTML = allPackages.map(p => {
-                    let statusClass = "bg-blue-100 text-blue-700";
-                    let rowClass = "row-route";
-                    if(p.status === 'Devolvido') { statusClass = "bg-green-100 text-green-700"; rowClass = "row-done"; }
-                    if(p.status === 'Falta') { statusClass = "bg-red-100 text-red-700"; rowClass = "row-missing"; }
+                    let statusClass = "bg-blue-100 text-blue-700"; let rowClass = "row-route";
+                    if(p.collection === 'devolvidos') { statusClass = "bg-green-100 text-green-700"; rowClass = "row-done"; }
+                    if(p.collection === 'faltas') { statusClass = "bg-red-100 text-red-700"; rowClass = "row-missing"; }
+                    if(p.collection === 'perdidos') { statusClass = "bg-zinc-800 text-white"; rowClass = "row-lost"; }
+                    
                     return `<div class="p-4 flex justify-between items-center transition-all ${rowClass}">
                         <div><div class="flex items-center gap-2"><span class="font-mono font-bold text-sm text-gray-700 dark:text-gray-200">${p.id}</span>
                         <span class="text-[8px] font-bold px-1.5 py-0.5 rounded ${statusClass}">${p.status.toUpperCase()}</span></div>
-                        <p class="text-[9px] text-slate-400 mt-0.5 uppercase tracking-tighter">Por: ${p.user || '...'} • ${p.time}</p></div>
+                        <p class="text-[9px] text-slate-400 mt-0.5 uppercase tracking-tighter">Por: ${p.user} • ${p.time}</p></div>
                     </div>`;
                 }).join('');
             }
-            document.getElementById('statOk').innerText = allPackages.filter(p => p.status === 'Devolvido').length;
-            document.getElementById('statPending').innerText = allPackages.filter(p => p.status === 'Em rota').length;
-            document.getElementById('statMissing').innerText = allPackages.filter(p => p.status === 'Falta').length;
+            document.getElementById('statPending').innerText = allPackages.filter(p => p.collection === 'bipados').length;
+            document.getElementById('statOk').innerText = allPackages.filter(p => p.collection === 'devolvidos').length;
+            document.getElementById('statMissing').innerText = allPackages.filter(p => p.collection === 'faltas').length;
+            document.getElementById('statLost').innerText = allPackages.filter(p => p.collection === 'perdidos').length;
             document.getElementById('listCount').innerText = allPackages.length;
         }
 
-        // Zap Sem Add Logic
+        // --- ZAP LOGIC ---
         const phoneInput = document.getElementById('phoneInput');
         phoneInput.addEventListener('input', function (e) {
             let v = e.target.value.replace(/\D/g, ''); 
@@ -642,7 +603,7 @@
             doc.save(`zap_${t}.pdf`);
         }
 
-        // Utils Universais
+        // --- UTILS ---
         function initAudio() { if(!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)(); if(audioCtx.state === 'suspended') audioCtx.resume(); }
         function playBeep(s) {
             if(!audioCtx) return; const o = audioCtx.createOscillator(); const g = audioCtx.createGain();
@@ -654,10 +615,7 @@
             const t = document.getElementById('toast');
             t.className = `fixed top-5 left-1/2 -translate-x-1/2 px-6 py-3 rounded-full shadow-2xl transition-all duration-300 z-[100] flex items-center gap-2 text-sm font-bold text-white ${c} opacity-100 translate-y-0`;
             document.getElementById('toastMsg').innerText = m; document.getElementById('toastIcon').className = `fas ${i}`;
-            setTimeout(() => { 
-                t.classList.add('opacity-0'); 
-                t.classList.add('translate-y-[-20px]'); 
-            }, 3000); // 3 segundos para ler e sumir
+            setTimeout(() => { t.classList.add('opacity-0'); t.classList.add('translate-y-[-20px]'); }, 3000);
         }
         function handleManualInput() { const i = document.getElementById('barcodeInput'); if(i.value.trim()) processCode(i.value.trim()); i.value = ""; }
         document.getElementById('barcodeInput').addEventListener('keypress', (e) => { if(e.key === 'Enter') handleManualInput(); });
