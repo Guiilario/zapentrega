@@ -62,6 +62,9 @@
                 currentUser = user;
                 showApp();
                 initDataListener(user.uid);
+                // Atualiza o nome na tela
+                const nameElements = document.querySelectorAll('.user-display-name');
+                nameElements.forEach(el => el.innerText = user.displayName || "Usuário");
             } else {
                 currentUser = null;
                 showLogin();
@@ -89,7 +92,6 @@
                     if (!name) return showToast("Digite o seu nome para o registo", "bg-red-500", "fa-user-tag");
                     
                     const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-                    // Atualiza o perfil com o nome do usuário
                     await updateProfile(userCredential.user, { displayName: name });
                     showToast("Conta criada com sucesso!", "bg-green-600", "fa-user-plus");
                 }
@@ -102,7 +104,11 @@
             }
         };
 
-        window.logout = () => signOut(auth);
+        window.logout = () => {
+            signOut(auth).then(() => {
+                showToast("Sessão encerrada", "bg-slate-700", "fa-sign-out-alt");
+            });
+        };
 
         // Listener Real-time Individualizado
         function initDataListener(userId) {
@@ -128,7 +134,7 @@
             try {
                 await addDoc(collection(db, 'artifacts', appId, 'users', currentUser.uid, 'bipados'), {
                     id: code,
-                    user: currentUser.displayName || "Entregador", // Usa o nome do utilizador logado
+                    user: currentUser.displayName || "Entregador",
                     status: status,
                     timestamp: serverTimestamp()
                 });
@@ -159,7 +165,7 @@
             }
         };
 
-        // Finalizar: Transformar 'Em rota' em 'Falta'
+        // Finalizar: Transformar 'Em rota' em 'Falta' (Somente os que não foram devolvidos)
         window.finalizeInFirebase = async () => {
             if (!currentUser) return false;
             try {
@@ -236,15 +242,22 @@
     <!-- Navbar -->
     <div id="main-navbar" class="fixed top-0 left-0 right-0 h-16 z-40 pointer-events-none hidden">
         <button onclick="toggleMenu()" class="absolute top-4 left-4 w-10 h-10 rounded-full bg-white dark:bg-zinc-800 shadow-lg flex items-center justify-center text-gray-600 dark:text-gray-200 pointer-events-auto ring-1 ring-gray-200 dark:ring-gray-600"><i class="fas fa-bars"></i></button>
+        
+        <!-- Identificador do Usuário na Tela -->
+        <div class="absolute top-4 left-16 px-4 py-2 bg-white/80 dark:bg-zinc-800/80 backdrop-blur rounded-full shadow-sm ring-1 ring-gray-200 dark:ring-gray-700 pointer-events-auto flex items-center gap-2">
+            <div class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+            <span class="user-display-name text-xs font-bold text-gray-700 dark:text-gray-200">Carregando...</span>
+        </div>
+
         <button onclick="toggleTheme()" class="absolute top-4 right-4 w-10 h-10 rounded-full bg-white dark:bg-zinc-800 shadow-lg flex items-center justify-center text-gray-600 dark:text-gray-200 pointer-events-auto ring-1 ring-gray-200 dark:ring-gray-600"><i id="themeIcon" class="fas fa-sun"></i></button>
     </div>
 
     <!-- Sidebar -->
     <div id="menuOverlay" class="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 hidden opacity-0 transition-opacity duration-300" onclick="toggleMenu()"></div>
     <div id="sideMenu" class="fixed inset-y-0 left-0 w-64 bg-white dark:bg-zinc-900 shadow-2xl transform -translate-x-full transition-transform duration-300 ease-in-out z-50 flex flex-col border-r border-gray-200 dark:border-zinc-700">
-        <div class="p-5 border-b border-gray-200 dark:border-zinc-700 flex justify-between items-center">
-            <h2 class="font-bold flex items-center gap-2">Menu Logística</h2>
-            <button onclick="toggleMenu()"><i class="fas fa-times text-xl text-gray-400"></i></button>
+        <div class="p-6 border-b border-gray-100 dark:border-zinc-800 flex flex-col gap-1">
+            <span class="text-[10px] font-bold text-blue-600 uppercase tracking-widest">Entregador</span>
+            <h2 class="user-display-name font-bold text-lg text-gray-800 dark:text-white truncate">Usuário</h2>
         </div>
         <nav class="p-4 flex flex-col gap-2">
             <a href="#" onclick="switchView('zap'); toggleMenu();" class="flex items-center gap-3 p-3 rounded-xl hover:bg-gray-100 dark:hover:bg-zinc-800 transition-colors">
@@ -354,7 +367,7 @@
                     <span class="text-blue-100 text-[10px] font-bold uppercase tracking-widest">Sessão de Bipagem</span>
                     <h2 id="currentUserName" class="text-xl font-bold italic">Ativa</h2>
                 </div>
-                <button onclick="finalizeOperation()" class="bg-white/20 hover:bg-white/40 px-4 py-2 rounded-xl font-bold text-sm border border-white/30">Finalizar Lote</button>
+                <button onclick="finalizeOperation()" class="bg-white/20 hover:bg-white/40 px-4 py-2 rounded-xl font-bold text-sm border border-white/30 transition-all">Finalizar Procedimento</button>
             </div>
             <div class="flex gap-2">
                 <input type="text" id="barcodeInput" placeholder="Bipar código..." class="flex-1 p-4 bg-black/20 rounded-xl text-white outline-none placeholder-blue-100 font-mono">
@@ -437,6 +450,10 @@
         let isCameraActive = false;
         let audioCtx = null;
 
+        // Throttle para bipagem
+        let lastScannedCode = '';
+        let lastScannedTime = 0;
+
         // UI Helpers
         function toggleTheme() {
             const isDark = document.documentElement.classList.toggle('dark');
@@ -476,6 +493,16 @@
         async function processCode(code) {
             if(!code) return;
             initAudio();
+
+            // Intervalo de 4000ms para o mesmo código
+            const now = Date.now();
+            if (code === lastScannedCode && (now - lastScannedTime) < 4000) {
+                return; // Ignora se bipar o mesmo item rápido demais
+            }
+            
+            lastScannedCode = code;
+            lastScannedTime = now;
+
             if(isConferenceMode) {
                 const pkg = allPackages.find(p => p.id === code);
                 if(pkg) {
@@ -497,26 +524,36 @@
                     showToast("Já está em rota!", "bg-yellow-500", "fa-info-circle");
                     playBeep(false);
                 } else if(pkg) {
+                    // Re-adição
                     await window.updateStatusFirebase(code, 'Em rota');
                     showToast("Re-adicionado à rota", "bg-blue-600", "fa-redo");
                     playBeep(true);
                 } else {
+                    // Novo
                     await window.saveToFirebase(code, 'Em rota');
-                    showToast("Adicionado!", "bg-blue-600", "fa-plus");
+                    showToast("Adicionado em Rota", "bg-blue-600", "fa-plus");
                     playBeep(true);
                 }
             }
         }
 
         async function finalizeOperation() {
-            if(confirm("Finalizar lote? Itens não devolvidos ficam como 'Falta'.")) {
-                const ok = await window.finalizeInFirebase();
-                if(ok) {
-                    document.getElementById('userSection').classList.add('hidden');
-                    document.getElementById('startSection').classList.remove('hidden');
-                    stopCamera();
-                    showToast("Lote Finalizado!", "bg-slate-800", "fa-flag-checkered");
+            const confirmMsg = isConferenceMode 
+                ? "Finalizar procedimento de devolução? Itens não devolvidos ficarão como 'Falta'."
+                : "Finalizar bipagem de saída?";
+
+            if(confirm(confirmMsg)) {
+                if (isConferenceMode) {
+                    const ok = await window.finalizeInFirebase();
+                    if(ok) {
+                        showToast("Procedimento Finalizado: Faltas processadas", "bg-slate-800", "fa-flag-checkered");
+                    }
+                } else {
+                    showToast("Lote de saída concluído", "bg-slate-800", "fa-check-double");
                 }
+                document.getElementById('userSection').classList.add('hidden');
+                document.getElementById('startSection').classList.remove('hidden');
+                stopCamera();
             }
         }
 
@@ -531,7 +568,7 @@
                     if(p.status === 'Devolvido') { statusClass = "bg-green-100 text-green-700"; rowClass = "row-done"; }
                     if(p.status === 'Falta') { statusClass = "bg-red-100 text-red-700"; rowClass = "row-missing"; }
                     return `<div class="p-4 flex justify-between items-center transition-all ${rowClass}">
-                        <div><div class="flex items-center gap-2"><span class="font-mono font-bold text-sm">${p.id}</span>
+                        <div><div class="flex items-center gap-2"><span class="font-mono font-bold text-sm text-gray-700 dark:text-gray-200">${p.id}</span>
                         <span class="text-[8px] font-bold px-1.5 py-0.5 rounded ${statusClass}">${p.status.toUpperCase()}</span></div>
                         <p class="text-[9px] text-slate-400 mt-0.5 uppercase tracking-tighter">Por: ${p.user || '...'} • ${p.time}</p></div>
                     </div>`;
@@ -543,7 +580,7 @@
             document.getElementById('listCount').innerText = allPackages.length;
         }
 
-        // Zap Sem Add Logic (Mesma anterior)
+        // Zap Sem Add Logic
         const phoneInput = document.getElementById('phoneInput');
         phoneInput.addEventListener('input', function (e) {
             let v = e.target.value.replace(/\D/g, ''); 
@@ -609,7 +646,7 @@
         function initAudio() { if(!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)(); if(audioCtx.state === 'suspended') audioCtx.resume(); }
         function playBeep(s) {
             if(!audioCtx) return; const o = audioCtx.createOscillator(); const g = audioCtx.createGain();
-            o.type = s ? 'square' : 'sawtooth'; o.frequency.setValueAtTime(s ? 4000 : 180, audioCtx.currentTime);
+            o.type = s ? 'square' : 'sawtooth'; o.frequency.setValueAtTime(s ? 2000 : 180, audioCtx.currentTime);
             g.gain.setValueAtTime(0.3, audioCtx.currentTime); g.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
             o.connect(g); g.connect(audioCtx.destination); o.start(); o.stop(audioCtx.currentTime + 0.1);
         }
@@ -617,7 +654,10 @@
             const t = document.getElementById('toast');
             t.className = `fixed top-5 left-1/2 -translate-x-1/2 px-6 py-3 rounded-full shadow-2xl transition-all duration-300 z-[100] flex items-center gap-2 text-sm font-bold text-white ${c} opacity-100 translate-y-0`;
             document.getElementById('toastMsg').innerText = m; document.getElementById('toastIcon').className = `fas ${i}`;
-            setTimeout(() => { t.classList.add('opacity-0'); t.classList.add('translate-y-[-20px]'); }, 4000);
+            setTimeout(() => { 
+                t.classList.add('opacity-0'); 
+                t.classList.add('translate-y-[-20px]'); 
+            }, 3000); // 3 segundos para ler e sumir
         }
         function handleManualInput() { const i = document.getElementById('barcodeInput'); if(i.value.trim()) processCode(i.value.trim()); i.value = ""; }
         document.getElementById('barcodeInput').addEventListener('keypress', (e) => { if(e.key === 'Enter') handleManualInput(); });
