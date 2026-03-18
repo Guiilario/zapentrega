@@ -24,7 +24,7 @@
     <!-- FIREBASE INTEGRATION (MODULAR SDK) -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-        import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+        import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, onAuthStateChanged, signOut, updateProfile } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
         import { getFirestore, collection, addDoc, serverTimestamp, query, onSnapshot, orderBy, updateDoc, doc, getDocs, where, writeBatch } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
         const firebaseConfig = {
@@ -44,6 +44,18 @@
         let unsubscribeSnapshot = null;
         let currentUser = null;
 
+        // Lista de domínios permitidos
+        const allowedDomains = [
+            'gmail.com', 'hotmail.com', 'outlook.com', 'live.com', 
+            'yahoo.com', 'yahoo.com.br', 'icloud.com', 'bol.com.br', 
+            'uol.com.br', 'terra.com.br', 'ig.com.br', 'msn.com', 'outlook.com.br'
+        ];
+
+        function isValidEmail(email) {
+            const domain = email.split('@')[1];
+            return allowedDomains.includes(domain?.toLowerCase());
+        }
+
         // Gestão de Autenticação
         onAuthStateChanged(auth, (user) => {
             if (user) {
@@ -59,22 +71,31 @@
 
         // Funções de Auth
         window.handleAuth = async (mode) => {
-            const email = document.getElementById('authEmail').value;
+            const email = document.getElementById('authEmail').value.trim();
             const password = document.getElementById('authPassword').value;
+            const name = document.getElementById('authName').value.trim();
 
-            if (!email || !password) return showToast("Preencha todos os campos", "bg-red-500", "fa-exclamation-circle");
+            if (!email || !password) return showToast("Preencha e-mail e senha", "bg-red-500", "fa-exclamation-circle");
+            
+            if (!isValidEmail(email)) {
+                return showToast("Use um e-mail válido (Gmail, Hotmail, etc)", "bg-red-500", "fa-envelope-open-text");
+            }
 
             try {
                 if (mode === 'login') {
                     await signInWithEmailAndPassword(auth, email, password);
                     showToast("Bem-vindo de volta!", "bg-green-600", "fa-check");
                 } else {
-                    await createUserWithEmailAndPassword(auth, email, password);
+                    if (!name) return showToast("Digite o seu nome para o registo", "bg-red-500", "fa-user-tag");
+                    
+                    const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+                    // Atualiza o perfil com o nome do usuário
+                    await updateProfile(userCredential.user, { displayName: name });
                     showToast("Conta criada com sucesso!", "bg-green-600", "fa-user-plus");
                 }
             } catch (error) {
                 let msg = "Erro na autenticação";
-                if (error.code === 'auth/weak-password') msg = "Senha demasiado fraca";
+                if (error.code === 'auth/weak-password') msg = "Senha demasiado fraca (mín. 6 caracteres)";
                 if (error.code === 'auth/email-already-in-use') msg = "E-mail já registado";
                 if (error.code === 'auth/invalid-credential') msg = "E-mail ou senha incorretos";
                 showToast(msg, "bg-red-500", "fa-times-circle");
@@ -102,12 +123,12 @@
         }
 
         // Salvar novo pacote (Em rota)
-        window.saveToFirebase = async (code, user, status) => {
+        window.saveToFirebase = async (code, status) => {
             if (!currentUser) return;
             try {
                 await addDoc(collection(db, 'artifacts', appId, 'users', currentUser.uid, 'bipados'), {
                     id: code,
-                    user: user,
+                    user: currentUser.displayName || "Entregador", // Usa o nome do utilizador logado
                     status: status,
                     timestamp: serverTimestamp()
                 });
@@ -176,6 +197,26 @@
             document.getElementById('sideMenu').classList.add('-translate-x-full');
             document.getElementById('menuOverlay').classList.add('hidden');
         }
+
+        // Função para mostrar campo de nome apenas no registro
+        window.toggleAuthMode = (isRegister) => {
+            const nameField = document.getElementById('nameField');
+            const loginBtn = document.getElementById('loginBtn');
+            const registerBtn = document.getElementById('registerBtn');
+            const toggleText = document.getElementById('toggleText');
+
+            if (isRegister) {
+                nameField.classList.remove('hidden');
+                loginBtn.classList.add('hidden');
+                registerBtn.classList.remove('hidden');
+                toggleText.innerHTML = 'Já tem conta? <a href="#" onclick="toggleAuthMode(false)" class="text-blue-500 font-bold">Faça login</a>';
+            } else {
+                nameField.classList.add('hidden');
+                loginBtn.classList.remove('hidden');
+                registerBtn.classList.add('hidden');
+                toggleText.innerHTML = 'Não tem conta? <a href="#" onclick="toggleAuthMode(true)" class="text-blue-500 font-bold">Crie uma agora</a>';
+            }
+        };
     </script>
 
     <style>
@@ -228,13 +269,17 @@
                     <i class="fas fa-truck-fast text-4xl text-white"></i>
                 </div>
                 <h1 class="text-2xl font-bold">Multiferramentas</h1>
-                <p class="text-sm text-gray-500 mt-1">Faça login para continuar</p>
+                <p class="text-sm text-gray-500 mt-1">Gestão de Entregas Cloud</p>
             </div>
 
             <div class="space-y-4">
+                <div id="nameField" class="hidden">
+                    <label class="block text-xs font-bold text-gray-400 uppercase ml-1 mb-1">Nome Completo</label>
+                    <input type="text" id="authName" class="w-full bg-gray-50 dark:bg-zinc-800 p-4 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 border border-transparent dark:border-zinc-700" placeholder="Seu nome">
+                </div>
                 <div>
                     <label class="block text-xs font-bold text-gray-400 uppercase ml-1 mb-1">E-mail</label>
-                    <input type="email" id="authEmail" class="w-full bg-gray-50 dark:bg-zinc-800 p-4 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 border border-transparent dark:border-zinc-700" placeholder="exemplo@email.com">
+                    <input type="email" id="authEmail" class="w-full bg-gray-50 dark:bg-zinc-800 p-4 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 border border-transparent dark:border-zinc-700" placeholder="exemplo@gmail.com">
                 </div>
                 <div>
                     <label class="block text-xs font-bold text-gray-400 uppercase ml-1 mb-1">Senha</label>
@@ -242,12 +287,15 @@
                 </div>
 
                 <div class="pt-2 space-y-3">
-                    <button onclick="handleAuth('login')" class="w-full bg-blue-600 hover:bg-blue-500 text-white py-4 rounded-xl font-bold shadow-lg shadow-blue-500/20 transition-all btn-pulse">
+                    <button id="loginBtn" onclick="handleAuth('login')" class="w-full bg-blue-600 hover:bg-blue-500 text-white py-4 rounded-xl font-bold shadow-lg shadow-blue-500/20 transition-all btn-pulse">
                         Entrar
                     </button>
-                    <button onclick="handleAuth('register')" class="w-full bg-transparent hover:bg-gray-100 dark:hover:bg-zinc-800 text-gray-500 py-3 rounded-xl font-semibold text-sm transition-all">
-                        Criar nova conta
+                    <button id="registerBtn" onclick="handleAuth('register')" class="w-full bg-blue-600 hover:bg-blue-500 text-white py-4 rounded-xl font-bold shadow-lg shadow-blue-500/20 transition-all btn-pulse hidden">
+                        Criar Conta
                     </button>
+                    <p id="toggleText" class="text-center text-sm text-gray-500">
+                        Não tem conta? <a href="#" onclick="toggleAuthMode(true)" class="text-blue-500 font-bold">Crie uma agora</a>
+                    </p>
                 </div>
             </div>
         </div>
@@ -356,7 +404,7 @@
                 <span id="listCount" class="text-blue-600 bg-blue-50 dark:bg-blue-900/30 px-2 py-1 rounded">0 total</span>
             </div>
             <div id="packageList" class="divide-y dark:divide-zinc-800 max-h-[500px] overflow-y-auto no-scrollbar">
-                <div class="p-12 text-center text-slate-400 italic">Lista vazia.</div>
+                <div class="p-12 text-center text-slate-400 italic text-sm">Lista vazia.</div>
             </div>
         </div>
     </main>
@@ -384,7 +432,6 @@
 
     <script>
         let allPackages = [];
-        let currentBatchUser = "Entregador"; 
         let isConferenceMode = false;
         let codeReader = null;
         let isCameraActive = false;
@@ -454,7 +501,7 @@
                     showToast("Re-adicionado à rota", "bg-blue-600", "fa-redo");
                     playBeep(true);
                 } else {
-                    await window.saveToFirebase(code, currentBatchUser, 'Em rota');
+                    await window.saveToFirebase(code, 'Em rota');
                     showToast("Adicionado!", "bg-blue-600", "fa-plus");
                     playBeep(true);
                 }
@@ -486,7 +533,7 @@
                     return `<div class="p-4 flex justify-between items-center transition-all ${rowClass}">
                         <div><div class="flex items-center gap-2"><span class="font-mono font-bold text-sm">${p.id}</span>
                         <span class="text-[8px] font-bold px-1.5 py-0.5 rounded ${statusClass}">${p.status.toUpperCase()}</span></div>
-                        <p class="text-[9px] text-slate-400 mt-0.5 uppercase tracking-tighter">${p.time}</p></div>
+                        <p class="text-[9px] text-slate-400 mt-0.5 uppercase tracking-tighter">Por: ${p.user || '...'} • ${p.time}</p></div>
                     </div>`;
                 }).join('');
             }
@@ -496,7 +543,7 @@
             document.getElementById('listCount').innerText = allPackages.length;
         }
 
-        // Zap Sem Add Logic
+        // Zap Sem Add Logic (Mesma anterior)
         const phoneInput = document.getElementById('phoneInput');
         phoneInput.addEventListener('input', function (e) {
             let v = e.target.value.replace(/\D/g, ''); 
