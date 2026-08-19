@@ -1,0 +1,1220 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Quadro Criativo</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg: #17191A;
+    --bg-2: #1D2021;
+    --grid-dot: rgba(255,255,255,0.055);
+    --panel: #1F2224;
+    --panel-border: rgba(255,255,255,0.09);
+    --panel-border-soft: rgba(255,255,255,0.05);
+    --text-hi: #F3F1EA;
+    --text-lo: #9A9C97;
+    --text-faint: #6A6D68;
+
+    --card-bg: #F6F4EE;
+    --card-bg-2: #FFFFFF;
+    --card-ink: #211F1B;
+    --card-ink-soft: #726F66;
+    --card-border: #E4E0D3;
+
+    --accent: #E8A33D;
+    --accent-ink: #1A1200;
+
+    --c-note: #8FA694;
+    --c-image: #5E93C2;
+    --c-video: #A084C9;
+    --c-date: #E8A33D;
+    --c-checklist: #4FA085;
+    --c-link: #D97B4E;
+
+    --danger: #CC5A45;
+
+    --font-display: 'Fraunces', Georgia, serif;
+    --font-body: 'Inter', -apple-system, sans-serif;
+    --font-mono: 'IBM Plex Mono', 'Courier New', monospace;
+
+    --radius: 10px;
+  }
+
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;height:100%;}
+  body{
+    background:var(--bg);
+    font-family:var(--font-body);
+    color:var(--text-hi);
+    overflow:hidden;
+    -webkit-font-smoothing:antialiased;
+  }
+  #app{display:flex;flex-direction:column;height:100vh;}
+
+  /* ---------- TOPBAR ---------- */
+  .topbar{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:16px;
+    padding:18px 26px 6px;
+    flex-shrink:0;
+  }
+  .brand{display:flex;flex-direction:column;gap:2px;min-width:0;}
+  .brand .eyebrow{
+    font-family:var(--font-mono);
+    font-size:10.5px;
+    letter-spacing:.14em;
+    color:var(--text-faint);
+    text-transform:uppercase;
+  }
+  #boardTitle{
+    font-family:var(--font-display);
+    font-weight:600;
+    font-size:22px;
+    color:var(--text-hi);
+    outline:none;
+    cursor:text;
+    max-width:60vw;
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+  }
+  #boardTitle:focus{text-overflow:clip;white-space:normal;}
+
+  .top-actions{display:flex;align-items:center;gap:10px;flex-shrink:0;}
+  .icon-btn{
+    background:transparent;
+    border:1px solid var(--panel-border);
+    color:var(--text-lo);
+    width:32px;height:32px;
+    border-radius:8px;
+    display:flex;align-items:center;justify-content:center;
+    cursor:pointer;
+    transition:.15s;
+    font-size:14px;
+  }
+  .icon-btn:hover{border-color:var(--accent);color:var(--accent);}
+
+  /* ---------- PHASE TABS ---------- */
+  .phase-bar{
+    display:flex;
+    align-items:flex-end;
+    gap:2px;
+    padding:14px 22px 0;
+    flex-shrink:0;
+    overflow-x:auto;
+    scrollbar-width:none;
+  }
+  .phase-bar::-webkit-scrollbar{display:none;}
+
+  .phase-tab{
+    position:relative;
+    display:flex;
+    align-items:center;
+    gap:8px;
+    padding:9px 16px;
+    border-radius:9px 9px 0 0;
+    background:var(--bg);
+    color:var(--text-lo);
+    font-family:var(--font-mono);
+    font-size:11.5px;
+    letter-spacing:.06em;
+    text-transform:uppercase;
+    white-space:nowrap;
+    cursor:pointer;
+    border:1px solid transparent;
+    border-bottom:none;
+    user-select:none;
+    transition:.15s;
+  }
+  .phase-tab:hover{color:var(--text-hi); background:var(--bg-2);}
+  .phase-tab.active{
+    background:var(--panel);
+    color:var(--text-hi);
+    border-color:var(--panel-border);
+  }
+  .phase-tab .dot{
+    width:7px;height:7px;border-radius:50%;
+    flex-shrink:0;
+    box-shadow:0 0 0 3px rgba(255,255,255,0.05);
+  }
+  .phase-tab .close-tab{
+    opacity:0;
+    width:14px;height:14px;
+    display:flex;align-items:center;justify-content:center;
+    border-radius:4px;
+    color:var(--text-faint);
+    font-size:12px;
+    margin-left:2px;
+  }
+  .phase-tab:hover .close-tab{opacity:1;}
+  .phase-tab .close-tab:hover{background:var(--danger);color:#fff;}
+  .phase-tab[contenteditable="true"]{outline:1px dashed var(--accent);}
+  .phase-tab.dragging{opacity:.4;}
+
+  .add-phase{
+    display:flex;align-items:center;justify-content:center;
+    width:30px;height:30px;
+    margin-bottom:2px;margin-left:6px;
+    border-radius:8px;
+    border:1px dashed var(--panel-border);
+    color:var(--text-faint);
+    cursor:pointer;
+    font-size:15px;
+    flex-shrink:0;
+    transition:.15s;
+  }
+  .add-phase:hover{color:var(--accent);border-color:var(--accent);}
+
+  .phase-progress{
+    margin-left:auto;
+    padding-bottom:10px;
+    padding-left:10px;
+    font-family:var(--font-mono);
+    font-size:10.5px;
+    color:var(--text-faint);
+    letter-spacing:.08em;
+    flex-shrink:0;
+    white-space:nowrap;
+  }
+
+  /* ---------- CANVAS ---------- */
+  .canvas-wrap{
+    flex:1;
+    background:var(--panel);
+    border-top:1px solid var(--panel-border);
+    position:relative;
+    overflow:auto;
+  }
+  .canvas{
+    position:relative;
+    width:2600px;
+    height:1700px;
+    background-image: radial-gradient(circle, var(--grid-dot) 1.2px, transparent 1.2px);
+    background-size: 26px 26px;
+  }
+  .empty-hint{
+    position:absolute;
+    top:80px;left:60px;
+    max-width:340px;
+    font-family:var(--font-mono);
+    font-size:12px;
+    line-height:1.7;
+    color:var(--text-faint);
+    letter-spacing:.02em;
+    border-left:2px solid var(--panel-border);
+    padding-left:14px;
+  }
+  .empty-hint b{color:var(--text-lo);}
+
+  /* ---------- CARDS ---------- */
+  .card{
+    position:absolute;
+    width:250px;
+    background:var(--card-bg);
+    border:1px solid var(--card-border);
+    border-left:3px solid var(--c-note);
+    border-radius:var(--radius);
+    box-shadow:0 6px 18px rgba(0,0,0,0.28), 0 1px 0 rgba(255,255,255,0.02);
+    color:var(--card-ink);
+    display:flex;
+    flex-direction:column;
+    user-select:none;
+    z-index:2;
+  }
+  .card.dragging{
+    box-shadow:0 18px 34px rgba(0,0,0,0.45);
+    z-index:50;
+    cursor:grabbing;
+  }
+  .card[data-type="image"], .card[data-type="video"]{width:290px;}
+
+  .card-head{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    padding:9px 10px 7px 11px;
+    cursor:grab;
+    border-bottom:1px solid var(--card-border);
+  }
+  .card-head:active{cursor:grabbing;}
+  .type-tag{
+    font-family:var(--font-mono);
+    font-size:9.5px;
+    letter-spacing:.10em;
+    text-transform:uppercase;
+    color:var(--card-ink-soft);
+    flex-shrink:0;
+  }
+  .card-title{
+    flex:1;
+    font-family:var(--font-body);
+    font-weight:600;
+    font-size:12.5px;
+    outline:none;
+    min-width:0;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+  }
+  .card-title:focus{white-space:normal; overflow:visible;}
+  .card-title:empty:before{content:attr(data-ph); color:var(--card-ink-soft); font-weight:500;}
+
+  .card-del{
+    flex-shrink:0;
+    width:20px;height:20px;
+    border-radius:5px;
+    display:flex;align-items:center;justify-content:center;
+    color:var(--card-ink-soft);
+    cursor:pointer;
+    font-size:13px;
+    opacity:0;
+    transition:.12s;
+  }
+  .card:hover .card-del{opacity:1;}
+  .card-del:hover{background:var(--danger); color:#fff;}
+
+  .card-body{padding:10px 12px 12px;font-size:13px;line-height:1.5;}
+
+  /* note */
+  .note-text{
+    outline:none;
+    min-height:40px;
+    font-family:var(--font-body);
+    white-space:pre-wrap;
+    word-break:break-word;
+  }
+  .note-text:empty:before{content:attr(data-ph); color:var(--card-ink-soft);}
+
+  /* image / video */
+  .media-url-row{display:flex;gap:6px;}
+  .field-input{
+    flex:1;
+    font-family:var(--font-mono);
+    font-size:11px;
+    padding:6px 8px;
+    border-radius:6px;
+    border:1px solid var(--card-border);
+    background:var(--card-bg-2);
+    color:var(--card-ink);
+    outline:none;
+    min-width:0;
+  }
+  .field-input:focus{border-color:var(--accent);}
+  .field-btn{
+    font-family:var(--font-mono);
+    font-size:10px;
+    letter-spacing:.05em;
+    text-transform:uppercase;
+    padding:6px 9px;
+    border-radius:6px;
+    border:1px solid var(--card-border);
+    background:var(--card-bg-2);
+    color:var(--card-ink-soft);
+    cursor:pointer;
+    flex-shrink:0;
+  }
+  .field-btn:hover{border-color:var(--accent);color:var(--card-ink);}
+  .media-frame{
+    width:100%;
+    border-radius:6px;
+    overflow:hidden;
+    background:#000;
+    display:block;
+    cursor:zoom-in;
+  }
+  .media-frame img{width:100%;display:block;}
+  .media-frame iframe{width:100%; aspect-ratio:16/9; display:block; border:0;}
+  .media-caption{
+    margin-top:7px;
+    font-size:11.5px;
+    color:var(--card-ink-soft);
+    outline:none;
+  }
+  .media-caption:empty:before{content:attr(data-ph); color:var(--card-ink-soft);}
+  .media-edit-link{
+    margin-top:6px;
+    font-family:var(--font-mono);
+    font-size:9.5px;
+    letter-spacing:.05em;
+    color:var(--card-ink-soft);
+    text-transform:uppercase;
+    cursor:pointer;
+    display:inline-block;
+  }
+  .media-edit-link:hover{color:var(--card-ink);}
+  .media-fallback{
+    display:flex;flex-direction:column;gap:2px;
+    padding:12px;
+    background:var(--card-bg-2);
+    border:1px dashed var(--card-border);
+    border-radius:6px;
+    cursor:pointer;
+  }
+  .media-fallback .mf-domain{font-family:var(--font-mono);font-size:9.5px;color:var(--card-ink-soft);text-transform:uppercase;letter-spacing:.06em;}
+  .media-fallback .mf-title{font-size:12.5px;font-weight:600;word-break:break-word;}
+
+  /* date */
+  .date-row{display:flex;align-items:center;gap:8px;}
+  .date-input{
+    font-family:var(--font-mono);
+    font-size:12px;
+    padding:6px 8px;
+    border-radius:6px;
+    border:1px solid var(--card-border);
+    background:var(--card-bg-2);
+    color:var(--card-ink);
+    outline:none;
+  }
+  .date-input:focus{border-color:var(--accent);}
+  .date-display{
+    display:flex;flex-direction:column;gap:3px;
+  }
+  .date-big{font-family:var(--font-display); font-size:19px; font-weight:600;}
+  .date-count{font-family:var(--font-mono); font-size:10.5px; letter-spacing:.05em; text-transform:uppercase; color:var(--card-ink-soft);}
+  .date-count.urgent{color:var(--danger); font-weight:600;}
+  .date-count.done{color:var(--c-checklist); font-weight:600;}
+  .date-label{
+    outline:none;
+    font-size:12.5px;
+    margin-top:6px;
+    color:var(--card-ink-soft);
+  }
+  .date-label:empty:before{content:attr(data-ph); color:var(--card-ink-soft);}
+
+  /* checklist */
+  .check-item{display:flex;align-items:flex-start;gap:7px;margin-bottom:5px;}
+  .check-item input[type=checkbox]{
+    margin-top:3px;
+    accent-color:var(--c-checklist);
+    cursor:pointer;
+    flex-shrink:0;
+  }
+  .check-item .ci-text{
+    flex:1;outline:none;font-size:13px;word-break:break-word;
+  }
+  .check-item.done .ci-text{color:var(--card-ink-soft); text-decoration:line-through;}
+  .check-item .ci-del{
+    flex-shrink:0;font-size:12px;color:var(--card-ink-soft);cursor:pointer;opacity:0;
+  }
+  .check-item:hover .ci-del{opacity:1;}
+  .check-item .ci-del:hover{color:var(--danger);}
+  .add-check-item{
+    font-family:var(--font-mono);
+    font-size:10.5px;
+    letter-spacing:.04em;
+    text-transform:uppercase;
+    color:var(--card-ink-soft);
+    cursor:pointer;
+    margin-top:4px;
+  }
+  .add-check-item:hover{color:var(--card-ink);}
+
+  /* link */
+  .link-card-body{
+    display:flex;flex-direction:column;gap:2px;
+    cursor:pointer;
+  }
+  .link-title{font-weight:600;font-size:13px;}
+  .link-domain{font-family:var(--font-mono); font-size:10px; color:var(--card-ink-soft); text-transform:uppercase; letter-spacing:.05em;}
+
+  /* ---------- FAB ---------- */
+  .fab-wrap{position:fixed; right:28px; bottom:28px; z-index:100;}
+  .fab{
+    width:52px;height:52px;
+    border-radius:50%;
+    background:var(--accent);
+    color:var(--accent-ink);
+    border:none;
+    font-size:26px;
+    display:flex;align-items:center;justify-content:center;
+    cursor:pointer;
+    box-shadow:0 8px 24px rgba(232,163,61,0.35);
+    transition:transform .15s;
+  }
+  .fab:hover{transform:scale(1.06);}
+  .fab.open{transform:rotate(45deg);}
+
+  .fab-menu{
+    position:absolute;
+    bottom:64px;
+    right:0;
+    display:flex;
+    flex-direction:column;
+    gap:6px;
+    opacity:0;
+    pointer-events:none;
+    transform:translateY(8px);
+    transition:.15s;
+  }
+  .fab-menu.open{opacity:1;pointer-events:auto;transform:translateY(0);}
+  .fab-item{
+    display:flex;align-items:center;gap:10px;
+    background:var(--panel);
+    border:1px solid var(--panel-border);
+    padding:8px 14px 8px 10px;
+    border-radius:9px;
+    cursor:pointer;
+    white-space:nowrap;
+    transition:.12s;
+  }
+  .fab-item:hover{border-color:var(--accent); transform:translateX(-2px);}
+  .fab-item .fi-dot{width:9px;height:9px;border-radius:50%;flex-shrink:0;}
+  .fab-item .fi-label{
+    font-family:var(--font-mono);
+    font-size:11px;
+    letter-spacing:.06em;
+    text-transform:uppercase;
+    color:var(--text-hi);
+  }
+
+  /* scrollbars */
+  .canvas-wrap::-webkit-scrollbar{width:11px;height:11px;}
+  .canvas-wrap::-webkit-scrollbar-track{background:var(--panel);}
+  .canvas-wrap::-webkit-scrollbar-thumb{background:#3a3d3e;border-radius:6px;border:2px solid var(--panel);}
+  .canvas-wrap::-webkit-scrollbar-thumb:hover{background:#4a4d4e;}
+</style>
+</head>
+<body>
+
+<div id="app">
+  <div class="topbar">
+    <div class="brand">
+      <div class="eyebrow">Painel de produção criativa</div>
+      <div id="boardTitle" contenteditable="true" spellcheck="false">Quadro Criativo</div>
+    </div>
+    <div class="top-actions">
+      <div class="icon-btn" id="resetBtn" title="Reiniciar quadro">↺</div>
+    </div>
+  </div>
+
+  <div class="phase-bar" id="phaseBar"></div>
+
+  <div class="canvas-wrap" id="canvasWrap">
+    <div class="canvas" id="canvas"></div>
+  </div>
+</div>
+
+<div class="fab-wrap">
+  <div class="fab-menu" id="fabMenu">
+    <div class="fab-item" data-type="note"><span class="fi-dot" style="background:var(--c-note)"></span><span class="fi-label">Nota</span></div>
+    <div class="fab-item" data-type="image"><span class="fi-dot" style="background:var(--c-image)"></span><span class="fi-label">Imagem</span></div>
+    <div class="fab-item" data-type="video"><span class="fi-dot" style="background:var(--c-video)"></span><span class="fi-label">Vídeo</span></div>
+    <div class="fab-item" data-type="date"><span class="fi-dot" style="background:var(--c-date)"></span><span class="fi-label">Data / prazo</span></div>
+    <div class="fab-item" data-type="checklist"><span class="fi-dot" style="background:var(--c-checklist)"></span><span class="fi-label">Checklist</span></div>
+    <div class="fab-item" data-type="link"><span class="fi-dot" style="background:var(--c-link)"></span><span class="fi-label">Link</span></div>
+  </div>
+  <button class="fab" id="fabBtn">+</button>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  const TYPE_COLOR = {
+    note: 'var(--c-note)', image:'var(--c-image)', video:'var(--c-video)',
+    date:'var(--c-date)', checklist:'var(--c-checklist)', link:'var(--c-link)'
+  };
+  const TYPE_LABEL = {
+    note:'Nota', image:'Imagem', video:'Vídeo', date:'Data', checklist:'Checklist', link:'Link'
+  };
+
+  const DEFAULT_PHASES = [
+    {id:'p1', name:'Fase Inicial'},
+    {id:'p2', name:'Edição'},
+    {id:'p3', name:'Finalização'},
+    {id:'p4', name:'Render'},
+    {id:'p5', name:'Entrega'}
+  ];
+
+  let state = {
+    title: 'Quadro Criativo',
+    phases: [],
+    activePhase: null,
+  };
+  let cardsCache = {}; // phaseId -> array of cards (loaded lazily)
+  let placeCounter = {};
+
+  const $ = (sel, root) => (root||document).querySelector(sel);
+  const $$ = (sel, root) => Array.from((root||document).querySelectorAll(sel));
+  const uid = () => Math.random().toString(36).slice(2,9) + Date.now().toString(36).slice(-4);
+
+  function escapeHtml(s){
+    return (s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+
+  // ---------------- STORAGE ----------------
+  async function storageGet(key){
+    try{
+      const r = await window.storage.get(key, false);
+      return r ? JSON.parse(r.value) : null;
+    }catch(e){ return null; }
+  }
+  async function storageSet(key, value){
+    try{ await window.storage.set(key, JSON.stringify(value), false); }
+    catch(e){ console.error('storage set failed', key, e); }
+  }
+  async function storageDelete(key){
+    try{ await window.storage.delete(key, false); }catch(e){}
+  }
+
+  async function saveMeta(){
+    await storageSet('meta', {title: state.title, phases: state.phases, activePhase: state.activePhase});
+  }
+  async function saveCards(phaseId){
+    await storageSet('cards:'+phaseId, cardsCache[phaseId] || []);
+  }
+  async function loadCards(phaseId){
+    if(cardsCache[phaseId]) return cardsCache[phaseId];
+    const data = await storageGet('cards:'+phaseId);
+    cardsCache[phaseId] = data || [];
+    return cardsCache[phaseId];
+  }
+
+  // ---------------- PHASE COLOR (progression gradient) ----------------
+  function phaseHue(index, total){
+    if(total <= 1) return 205;
+    const t = index/(total-1);
+    return Math.round(205 - (205-3)*t);
+  }
+  function phaseColor(index, total){
+    return `hsl(${phaseHue(index,total)}, 58%, 56%)`;
+  }
+
+  // ---------------- INIT ----------------
+  async function init(){
+    const meta = await storageGet('meta');
+    if(meta && meta.phases && meta.phases.length){
+      state.title = meta.title || 'Quadro Criativo';
+      state.phases = meta.phases;
+      state.activePhase = meta.activePhase || meta.phases[0].id;
+    } else {
+      state.title = 'Quadro Criativo';
+      state.phases = DEFAULT_PHASES.map(p => ({...p}));
+      state.activePhase = state.phases[0].id;
+      await saveMeta();
+    }
+    $('#boardTitle').textContent = state.title;
+    await loadCards(state.activePhase);
+    renderPhaseBar();
+    renderCanvas();
+  }
+
+  // ---------------- BOARD TITLE ----------------
+  $('#boardTitle').addEventListener('blur', () => {
+    const t = $('#boardTitle').textContent.trim() || 'Quadro Criativo';
+    state.title = t;
+    $('#boardTitle').textContent = t;
+    saveMeta();
+  });
+  $('#boardTitle').addEventListener('keydown', e => {
+    if(e.key === 'Enter'){ e.preventDefault(); $('#boardTitle').blur(); }
+  });
+
+  // ---------------- RESET ----------------
+  $('#resetBtn').addEventListener('click', async () => {
+    if(!confirm('Isso vai apagar todas as fases e cards do quadro. Deseja continuar?')) return;
+    for(const p of state.phases){ await storageDelete('cards:'+p.id); }
+    state.title = 'Quadro Criativo';
+    state.phases = DEFAULT_PHASES.map(p => ({...p}));
+    state.activePhase = state.phases[0].id;
+    cardsCache = {};
+    await saveMeta();
+    $('#boardTitle').textContent = state.title;
+    await loadCards(state.activePhase);
+    renderPhaseBar();
+    renderCanvas();
+  });
+
+  // ---------------- PHASE BAR ----------------
+  function renderPhaseBar(){
+    const bar = $('#phaseBar');
+    bar.innerHTML = '';
+    state.phases.forEach((phase, i) => {
+      const tab = document.createElement('div');
+      tab.className = 'phase-tab' + (phase.id === state.activePhase ? ' active' : '');
+      tab.draggable = true;
+      tab.dataset.id = phase.id;
+
+      const dot = document.createElement('span');
+      dot.className = 'dot';
+      dot.style.background = phaseColor(i, state.phases.length);
+      tab.appendChild(dot);
+
+      const label = document.createElement('span');
+      label.textContent = phase.name;
+      label.className = 'tab-label';
+      tab.appendChild(label);
+
+      const close = document.createElement('span');
+      close.className = 'close-tab';
+      close.textContent = '✕';
+      close.title = 'Excluir fase';
+      close.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        if(state.phases.length <= 1){ alert('É preciso manter ao menos uma fase.'); return; }
+        if(!confirm(`Excluir a fase "${phase.name}" e todos os cards nela?`)) return;
+        await storageDelete('cards:'+phase.id);
+        delete cardsCache[phase.id];
+        state.phases = state.phases.filter(p => p.id !== phase.id);
+        if(state.activePhase === phase.id){
+          state.activePhase = state.phases[0].id;
+          await loadCards(state.activePhase);
+        }
+        await saveMeta();
+        renderPhaseBar();
+        renderCanvas();
+      });
+      tab.appendChild(close);
+
+      tab.addEventListener('click', async () => {
+        if(tab.getAttribute('contenteditable') === 'true') return;
+        if(state.activePhase === phase.id) return;
+        state.activePhase = phase.id;
+        await saveMeta();
+        await loadCards(phase.id);
+        renderPhaseBar();
+        renderCanvas();
+      });
+
+      tab.addEventListener('dblclick', (e) => {
+        e.stopPropagation();
+        tab.setAttribute('contenteditable', 'true');
+        label.focus();
+        document.execCommand('selectAll', false, null);
+      });
+      label.addEventListener('blur', async () => {
+        tab.removeAttribute('contenteditable');
+        const newName = label.textContent.trim() || phase.name;
+        phase.name = newName;
+        label.textContent = newName;
+        await saveMeta();
+      });
+      label.addEventListener('keydown', e => {
+        if(e.key === 'Enter'){ e.preventDefault(); label.blur(); }
+      });
+
+      // drag reorder
+      tab.addEventListener('dragstart', e => {
+        tab.classList.add('dragging');
+        e.dataTransfer.setData('text/plain', phase.id);
+      });
+      tab.addEventListener('dragend', () => tab.classList.remove('dragging'));
+      tab.addEventListener('dragover', e => e.preventDefault());
+      tab.addEventListener('drop', async e => {
+        e.preventDefault();
+        const draggedId = e.dataTransfer.getData('text/plain');
+        if(draggedId === phase.id) return;
+        const fromIdx = state.phases.findIndex(p => p.id === draggedId);
+        const toIdx = state.phases.findIndex(p => p.id === phase.id);
+        const [moved] = state.phases.splice(fromIdx, 1);
+        state.phases.splice(toIdx, 0, moved);
+        await saveMeta();
+        renderPhaseBar();
+      });
+
+      bar.appendChild(tab);
+    });
+
+    const addBtn = document.createElement('div');
+    addBtn.className = 'add-phase';
+    addBtn.textContent = '+';
+    addBtn.title = 'Nova fase';
+    addBtn.addEventListener('click', async () => {
+      const id = 'p' + uid();
+      const name = 'Nova Fase';
+      state.phases.push({id, name});
+      state.activePhase = id;
+      cardsCache[id] = [];
+      await saveMeta();
+      await saveCards(id);
+      renderPhaseBar();
+      renderCanvas();
+      // auto-focus rename
+      requestAnimationFrame(() => {
+        const t = $(`.phase-tab[data-id="${id}"] .tab-label`);
+        if(t){
+          const tab = t.closest('.phase-tab');
+          tab.setAttribute('contenteditable','true');
+          t.focus();
+          document.execCommand('selectAll', false, null);
+        }
+      });
+    });
+    bar.appendChild(addBtn);
+
+    const idx = state.phases.findIndex(p => p.id === state.activePhase);
+    const prog = document.createElement('div');
+    prog.className = 'phase-progress';
+    prog.textContent = `FASE ${idx+1} DE ${state.phases.length}`;
+    bar.appendChild(prog);
+  }
+
+  // ---------------- CANVAS / CARDS ----------------
+  function renderCanvas(){
+    const canvas = $('#canvas');
+    canvas.innerHTML = '';
+    const cards = cardsCache[state.activePhase] || [];
+    if(cards.length === 0){
+      const hint = document.createElement('div');
+      hint.className = 'empty-hint';
+      hint.innerHTML = `<b>Essa fase ainda está vazia.</b><br>Clique no botão <b>+</b> no canto inferior direito para adicionar notas, imagens, vídeos, prazos, checklists ou links. Arraste os cards pelo cabeçalho para organizar o espaço.`;
+      canvas.appendChild(hint);
+    }
+    cards.forEach(card => canvas.appendChild(buildCardEl(card)));
+  }
+
+  function nextPosition(){
+    const phaseId = state.activePhase;
+    placeCounter[phaseId] = (placeCounter[phaseId] || 0) + 1;
+    const n = placeCounter[phaseId] - 1;
+    const col = n % 6, row = Math.floor(n/6) % 6;
+    return { x: 50 + col*70 + (row%2)*20, y: 40 + row*60 + col*8 };
+  }
+
+  async function addCard(type){
+    const pos = nextPosition();
+    const base = {
+      id: uid(), type, title: '',
+      x: pos.x, y: pos.y
+    };
+    let content = {};
+    if(type === 'note') content = {text:''};
+    if(type === 'image') content = {url:'', caption:''};
+    if(type === 'video') content = {url:'', caption:''};
+    if(type === 'date') content = {date:'', label:''};
+    if(type === 'checklist') content = {items:[{id:uid(), text:'', done:false}]};
+    if(type === 'link') content = {url:'', label:''};
+    const card = {...base, content};
+    const cards = cardsCache[state.activePhase];
+    cards.push(card);
+    await saveCards(state.activePhase);
+    renderCanvas();
+    // focus title for quick naming
+    requestAnimationFrame(() => {
+      const el = $(`.card[data-id="${card.id}"] .card-title`);
+      if(el) el.focus();
+    });
+  }
+
+  function debounce(fn, wait){
+    let t;
+    return (...args) => { clearTimeout(t); t = setTimeout(()=>fn(...args), wait); };
+  }
+  const debouncedSave = debounce(() => saveCards(state.activePhase), 400);
+
+  function getCard(id){
+    return (cardsCache[state.activePhase]||[]).find(c => c.id === id);
+  }
+
+  function extractYoutube(url){
+    const m = url.match(/(?:youtube\.com\/(?:watch\?v=|embed\/|shorts\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/);
+    return m ? m[1] : null;
+  }
+  function extractVimeo(url){
+    const m = url.match(/vimeo\.com\/(?:video\/)?(\d+)/);
+    return m ? m[1] : null;
+  }
+  function domainOf(url){
+    try{ return new URL(url).hostname.replace('www.',''); }catch(e){ return url; }
+  }
+
+  function buildCardEl(card){
+    const el = document.createElement('div');
+    el.className = 'card';
+    el.dataset.id = card.id;
+    el.dataset.type = card.type;
+    el.style.left = card.x + 'px';
+    el.style.top = card.y + 'px';
+    el.style.borderLeftColor = TYPE_COLOR[card.type];
+
+    // head
+    const head = document.createElement('div');
+    head.className = 'card-head';
+
+    const tag = document.createElement('span');
+    tag.className = 'type-tag';
+    tag.textContent = TYPE_LABEL[card.type];
+    head.appendChild(tag);
+
+    const title = document.createElement('div');
+    title.className = 'card-title';
+    title.contentEditable = 'true';
+    title.spellcheck = false;
+    title.dataset.ph = 'Sem título';
+    title.textContent = card.title || '';
+    title.addEventListener('input', () => { card.title = title.textContent; debouncedSave(); });
+    title.addEventListener('keydown', e => { if(e.key==='Enter'){ e.preventDefault(); title.blur(); } });
+    head.appendChild(title);
+
+    const del = document.createElement('div');
+    del.className = 'card-del';
+    del.textContent = '✕';
+    del.title = 'Excluir card';
+    del.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const arr = cardsCache[state.activePhase];
+      const idx = arr.findIndex(c => c.id === card.id);
+      if(idx > -1) arr.splice(idx,1);
+      await saveCards(state.activePhase);
+      renderCanvas();
+    });
+    head.appendChild(del);
+
+    el.appendChild(head);
+    enableDrag(el, head, card);
+
+    // body
+    const body = document.createElement('div');
+    body.className = 'card-body';
+    body.appendChild(buildBody(card));
+    el.appendChild(body);
+
+    return el;
+  }
+
+  function buildBody(card){
+    const wrap = document.createElement('div');
+    if(card.type === 'note') buildNoteBody(wrap, card);
+    else if(card.type === 'image') buildMediaBody(wrap, card, 'image');
+    else if(card.type === 'video') buildMediaBody(wrap, card, 'video');
+    else if(card.type === 'date') buildDateBody(wrap, card);
+    else if(card.type === 'checklist') buildChecklistBody(wrap, card);
+    else if(card.type === 'link') buildLinkBody(wrap, card);
+    return wrap;
+  }
+
+  function buildNoteBody(wrap, card){
+    const t = document.createElement('div');
+    t.className = 'note-text';
+    t.contentEditable = 'true';
+    t.spellcheck = false;
+    t.dataset.ph = 'Escreva sua ideia aqui...';
+    t.textContent = card.content.text || '';
+    t.addEventListener('input', () => { card.content.text = t.textContent; debouncedSave(); });
+    wrap.appendChild(t);
+  }
+
+  function buildMediaBody(wrap, card, kind){
+    const c = card.content;
+    if(!c.url){
+      const row = document.createElement('div');
+      row.className = 'media-url-row';
+      const input = document.createElement('input');
+      input.className = 'field-input';
+      input.placeholder = kind === 'image' ? 'Cole a URL da imagem...' : 'Cole a URL do vídeo (YouTube, Vimeo ou link)...';
+      const btn = document.createElement('button');
+      btn.className = 'field-btn';
+      btn.textContent = 'OK';
+      const commit = async () => {
+        const v = input.value.trim();
+        if(!v) return;
+        c.url = v;
+        await saveCards(state.activePhase);
+        renderCanvas();
+      };
+      btn.addEventListener('click', commit);
+      input.addEventListener('keydown', e => { if(e.key==='Enter'){ e.preventDefault(); commit(); } });
+      row.appendChild(input); row.appendChild(btn);
+      wrap.appendChild(row);
+      return;
+    }
+
+    if(kind === 'image'){
+      const frame = document.createElement('div');
+      frame.className = 'media-frame';
+      const img = document.createElement('img');
+      img.src = c.url;
+      img.alt = card.title || 'imagem';
+      img.addEventListener('error', () => {
+        frame.remove();
+        wrap.insertBefore(buildFallback(c.url, 'Imagem indisponível'), wrap.firstChild);
+      });
+      img.addEventListener('click', () => window.open(c.url, '_blank'));
+      frame.appendChild(img);
+      wrap.appendChild(frame);
+    } else {
+      const yt = extractYoutube(c.url);
+      const vm = extractVimeo(c.url);
+      if(yt || vm){
+        const frame = document.createElement('div');
+        frame.className = 'media-frame';
+        const iframe = document.createElement('iframe');
+        iframe.src = yt ? `https://www.youtube.com/embed/${yt}` : `https://player.vimeo.com/video/${vm}`;
+        iframe.allow = 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture';
+        iframe.allowFullscreen = true;
+        frame.appendChild(iframe);
+        wrap.appendChild(frame);
+      } else {
+        wrap.appendChild(buildFallback(c.url, card.title || 'Abrir vídeo'));
+      }
+    }
+
+    const caption = document.createElement('div');
+    caption.className = 'media-caption';
+    caption.contentEditable = 'true';
+    caption.spellcheck = false;
+    caption.dataset.ph = 'Adicionar legenda...';
+    caption.textContent = c.caption || '';
+    caption.addEventListener('input', () => { c.caption = caption.textContent; debouncedSave(); });
+    wrap.appendChild(caption);
+
+    const editLink = document.createElement('div');
+    editLink.className = 'media-edit-link';
+    editLink.textContent = 'trocar url';
+    editLink.addEventListener('click', async () => {
+      c.url = '';
+      await saveCards(state.activePhase);
+      renderCanvas();
+    });
+    wrap.appendChild(editLink);
+  }
+
+  function buildFallback(url, label){
+    const fb = document.createElement('div');
+    fb.className = 'media-fallback';
+    const dom = document.createElement('div');
+    dom.className = 'mf-domain';
+    dom.textContent = domainOf(url);
+    const ti = document.createElement('div');
+    ti.className = 'mf-title';
+    ti.textContent = label;
+    fb.appendChild(dom); fb.appendChild(ti);
+    fb.addEventListener('click', () => window.open(url, '_blank'));
+    return fb;
+  }
+
+  function fmtDate(iso){
+    if(!iso) return '';
+    const [y,m,d] = iso.split('-');
+    return `${d}/${m}/${y}`;
+  }
+  function daysUntil(iso){
+    const target = new Date(iso + 'T00:00:00');
+    const today = new Date();
+    today.setHours(0,0,0,0);
+    return Math.round((target - today) / 86400000);
+  }
+
+  function buildDateBody(wrap, card){
+    const c = card.content;
+    if(!c.date){
+      const input = document.createElement('input');
+      input.type = 'date';
+      input.className = 'date-input';
+      input.addEventListener('change', async () => {
+        if(!input.value) return;
+        c.date = input.value;
+        await saveCards(state.activePhase);
+        renderCanvas();
+      });
+      wrap.appendChild(input);
+      return;
+    }
+    const disp = document.createElement('div');
+    disp.className = 'date-display';
+    const big = document.createElement('div');
+    big.className = 'date-big';
+    big.textContent = fmtDate(c.date);
+    big.title = 'Clique para alterar a data';
+    big.style.cursor = 'pointer';
+    big.addEventListener('click', () => {
+      const input = document.createElement('input');
+      input.type = 'date';
+      input.className = 'date-input';
+      input.value = c.date;
+      input.addEventListener('change', async () => {
+        c.date = input.value || c.date;
+        await saveCards(state.activePhase);
+        renderCanvas();
+      });
+      input.addEventListener('blur', () => { if(input.value) { c.date = input.value; saveCards(state.activePhase); } renderCanvas(); });
+      disp.replaceChild(input, big);
+      input.focus();
+    });
+    disp.appendChild(big);
+
+    const days = daysUntil(c.date);
+    const count = document.createElement('div');
+    count.className = 'date-count';
+    if(days === 0){ count.textContent = 'É hoje'; count.classList.add('urgent'); }
+    else if(days < 0){ count.textContent = `${Math.abs(days)} dia(s) atrás`; count.classList.add('done'); }
+    else if(days <= 3){ count.textContent = `Faltam ${days} dia(s)`; count.classList.add('urgent'); }
+    else { count.textContent = `Faltam ${days} dias`; }
+    disp.appendChild(count);
+    wrap.appendChild(disp);
+
+    const label = document.createElement('div');
+    label.className = 'date-label';
+    label.contentEditable = 'true';
+    label.spellcheck = false;
+    label.dataset.ph = 'O que acontece nessa data?';
+    label.textContent = c.label || '';
+    label.addEventListener('input', () => { c.label = label.textContent; debouncedSave(); });
+    wrap.appendChild(label);
+  }
+
+  function buildChecklistBody(wrap, card){
+    const c = card.content;
+    const list = document.createElement('div');
+    c.items.forEach(item => list.appendChild(buildCheckItem(card, item)));
+    wrap.appendChild(list);
+
+    const add = document.createElement('div');
+    add.className = 'add-check-item';
+    add.textContent = '+ adicionar item';
+    add.addEventListener('click', async () => {
+      const item = {id:uid(), text:'', done:false};
+      c.items.push(item);
+      await saveCards(state.activePhase);
+      renderCanvas();
+      requestAnimationFrame(() => {
+        const el = $(`.card[data-id="${card.id}"] .ci-text[data-item="${item.id}"]`);
+        if(el) el.focus();
+      });
+    });
+    wrap.appendChild(add);
+  }
+
+  function buildCheckItem(card, item){
+    const row = document.createElement('div');
+    row.className = 'check-item' + (item.done ? ' done' : '');
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.checked = item.done;
+    cb.addEventListener('change', async () => {
+      item.done = cb.checked;
+      row.classList.toggle('done', item.done);
+      await saveCards(state.activePhase);
+    });
+    const txt = document.createElement('div');
+    txt.className = 'ci-text';
+    txt.dataset.item = item.id;
+    txt.contentEditable = 'true';
+    txt.spellcheck = false;
+    txt.textContent = item.text || '';
+    txt.addEventListener('input', () => { item.text = txt.textContent; debouncedSave(); });
+    txt.addEventListener('keydown', e => { if(e.key === 'Enter'){ e.preventDefault(); txt.blur(); } });
+    const del = document.createElement('div');
+    del.className = 'ci-del';
+    del.textContent = '✕';
+    del.addEventListener('click', async () => {
+      card.content.items = card.content.items.filter(i => i.id !== item.id);
+      if(card.content.items.length === 0) card.content.items.push({id:uid(), text:'', done:false});
+      await saveCards(state.activePhase);
+      renderCanvas();
+    });
+    row.appendChild(cb); row.appendChild(txt); row.appendChild(del);
+    return row;
+  }
+
+  function buildLinkBody(wrap, card){
+    const c = card.content;
+    if(!c.url){
+      const row = document.createElement('div');
+      row.className = 'media-url-row';
+      const input = document.createElement('input');
+      input.className = 'field-input';
+      input.placeholder = 'Cole a URL...';
+      const btn = document.createElement('button');
+      btn.className = 'field-btn';
+      btn.textContent = 'OK';
+      const commit = async () => {
+        const v = input.value.trim();
+        if(!v) return;
+        c.url = v;
+        if(!c.label) c.label = domainOf(v);
+        await saveCards(state.activePhase);
+        renderCanvas();
+      };
+      btn.addEventListener('click', commit);
+      input.addEventListener('keydown', e => { if(e.key==='Enter'){ e.preventDefault(); commit(); } });
+      row.appendChild(input); row.appendChild(btn);
+      wrap.appendChild(row);
+      return;
+    }
+    const body = document.createElement('div');
+    body.className = 'link-card-body';
+    const ti = document.createElement('div');
+    ti.className = 'link-title';
+    ti.contentEditable = 'true';
+    ti.spellcheck = false;
+    ti.textContent = c.label || domainOf(c.url);
+    ti.addEventListener('click', (e) => e.stopPropagation());
+    ti.addEventListener('input', () => { c.label = ti.textContent; debouncedSave(); });
+    const dom = document.createElement('div');
+    dom.className = 'link-domain';
+    dom.textContent = domainOf(c.url);
+    body.appendChild(ti); body.appendChild(dom);
+    body.addEventListener('click', (e) => { if(e.target !== ti) window.open(c.url, '_blank'); });
+    wrap.appendChild(body);
+  }
+
+  // ---------------- DRAG ----------------
+  function enableDrag(cardEl, handle, card){
+    let startX, startY, origX, origY, dragging = false;
+    const canvasWrap = $('#canvasWrap');
+
+    handle.addEventListener('pointerdown', (e) => {
+      if(e.target.closest('.card-del')) return;
+      if(e.target.isContentEditable) return;
+      dragging = true;
+      cardEl.classList.add('dragging');
+      startX = e.clientX; startY = e.clientY;
+      origX = card.x; origY = card.y;
+      handle.setPointerCapture(e.pointerId);
+      e.preventDefault();
+    });
+    handle.addEventListener('pointermove', (e) => {
+      if(!dragging) return;
+      const dx = e.clientX - startX;
+      const dy = e.clientY - startY;
+      let nx = origX + dx;
+      let ny = origY + dy;
+      nx = Math.max(0, Math.min(nx, 2600 - cardEl.offsetWidth));
+      ny = Math.max(0, Math.min(ny, 1700 - 40));
+      card.x = nx; card.y = ny;
+      cardEl.style.left = nx + 'px';
+      cardEl.style.top = ny + 'px';
+    });
+    const end = (e) => {
+      if(!dragging) return;
+      dragging = false;
+      cardEl.classList.remove('dragging');
+      try{ handle.releasePointerCapture(e.pointerId); }catch(err){}
+      debouncedSave();
+    };
+    handle.addEventListener('pointerup', end);
+    handle.addEventListener('pointercancel', end);
+  }
+
+  // ---------------- FAB MENU ----------------
+  const fabBtn = $('#fabBtn');
+  const fabMenu = $('#fabMenu');
+  fabBtn.addEventListener('click', () => {
+    fabBtn.classList.toggle('open');
+    fabMenu.classList.toggle('open');
+  });
+  $$('.fab-item').forEach(item => {
+    item.addEventListener('click', async () => {
+      fabBtn.classList.remove('open');
+      fabMenu.classList.remove('open');
+      await addCard(item.dataset.type);
+    });
+  });
+  document.addEventListener('click', (e) => {
+    if(!e.target.closest('.fab-wrap')){
+      fabBtn.classList.remove('open');
+      fabMenu.classList.remove('open');
+    }
+  });
+
+  init();
+})();
+</script>
+</body>
+</html>
