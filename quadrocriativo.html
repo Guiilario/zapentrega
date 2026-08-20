@@ -13,7 +13,6 @@
     --grid-dot: rgba(255,255,255,0.055);
     --panel: #1F2224;
     --panel-border: rgba(255,255,255,0.09);
-    --panel-border-soft: rgba(255,255,255,0.05);
     --text-hi: #F3F1EA;
     --text-lo: #9A9C97;
     --text-faint: #6A6D68;
@@ -98,6 +97,21 @@
     font-size:14px;
   }
   .icon-btn:hover{border-color:var(--accent);color:var(--accent);}
+  .text-btn{
+    display:flex;align-items:center;gap:7px;
+    background:transparent;
+    border:1px solid var(--panel-border);
+    color:var(--text-lo);
+    height:32px;padding:0 12px;
+    border-radius:8px;
+    cursor:pointer;
+    transition:.15s;
+    font-family:var(--font-mono);
+    font-size:10.5px;
+    letter-spacing:.06em;
+    text-transform:uppercase;
+  }
+  .text-btn:hover{border-color:var(--accent);color:var(--accent);}
 
   /* ---------- PHASE TABS ---------- */
   .phase-bar{
@@ -182,25 +196,34 @@
     white-space:nowrap;
   }
 
-  /* ---------- CANVAS ---------- */
+  /* ---------- CANVAS (infinite pan/zoom) ---------- */
   .canvas-wrap{
     flex:1;
     background:var(--panel);
     border-top:1px solid var(--panel-border);
     position:relative;
-    overflow:auto;
-  }
-  .canvas{
-    position:relative;
-    width:2600px;
-    height:1700px;
+    overflow:hidden;
+    cursor:grab;
+    touch-action:none;
     background-image: radial-gradient(circle, var(--grid-dot) 1.2px, transparent 1.2px);
-    background-size: 26px 26px;
+    background-size:26px 26px;
+    background-position:0 0;
+    user-select:none;
   }
+  .canvas-wrap.panning{cursor:grabbing;}
+
+  #canvas{
+    position:absolute;
+    left:0;top:0;
+    width:0;height:0;
+    transform-origin:0 0;
+    will-change:transform;
+  }
+
   .empty-hint{
     position:absolute;
     top:80px;left:60px;
-    max-width:340px;
+    width:340px;
     font-family:var(--font-mono);
     font-size:12px;
     line-height:1.7;
@@ -210,6 +233,42 @@
     padding-left:14px;
   }
   .empty-hint b{color:var(--text-lo);}
+
+  /* ---------- ZOOM CONTROLS ---------- */
+  .zoom-controls{
+    position:fixed;
+    left:24px; bottom:24px;
+    z-index:100;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    background:var(--panel);
+    border:1px solid var(--panel-border);
+    border-radius:12px;
+    padding:5px;
+    box-shadow:0 8px 22px rgba(0,0,0,0.35);
+    gap:2px;
+  }
+  .zc-btn{
+    width:36px;height:32px;
+    background:transparent;
+    border:none;
+    color:var(--text-hi);
+    font-size:16px;
+    display:flex;align-items:center;justify-content:center;
+    cursor:pointer;
+    border-radius:7px;
+    transition:.12s;
+  }
+  .zc-btn:hover{background:var(--bg-2); color:var(--accent);}
+  .zc-btn.label{
+    font-family:var(--font-mono);
+    font-size:10px;
+    letter-spacing:.03em;
+  }
+  .zc-sep{width:22px;height:1px;background:var(--panel-border);margin:3px 0;}
+  .zc-btn.focus-btn{font-size:15px;}
+  .zc-btn:disabled, .zc-btn.disabled{opacity:.3;cursor:default;pointer-events:none;}
 
   /* ---------- CARDS ---------- */
   .card{
@@ -225,21 +284,29 @@
     flex-direction:column;
     user-select:none;
     z-index:2;
+    min-width:180px;
+    min-height:90px;
   }
   .card.dragging{
     box-shadow:0 18px 34px rgba(0,0,0,0.45);
     z-index:50;
     cursor:grabbing;
   }
+  .card.selected{
+    outline:2px solid var(--accent);
+    outline-offset:2px;
+  }
   .card[data-type="image"], .card[data-type="video"]{width:290px;}
 
   .card-head{
+    position:relative;
     display:flex;
     align-items:center;
     gap:8px;
     padding:9px 10px 7px 11px;
     cursor:grab;
     border-bottom:1px solid var(--card-border);
+    flex-shrink:0;
   }
   .card-head:active{cursor:grabbing;}
   .type-tag{
@@ -264,6 +331,27 @@
   .card-title:focus{white-space:normal; overflow:visible;}
   .card-title:empty:before{content:attr(data-ph); color:var(--card-ink-soft); font-weight:500;}
 
+  .color-dot{
+    width:13px;height:13px;border-radius:50%;
+    flex-shrink:0;cursor:pointer;
+    border:1px solid rgba(0,0,0,.15);
+    box-shadow:0 0 0 2px var(--card-bg);
+  }
+  .color-popover{
+    position:absolute; z-index:80;
+    top:32px; right:6px;
+    background:var(--panel);
+    border:1px solid var(--panel-border);
+    border-radius:9px;
+    padding:7px;
+    display:flex; gap:6px; flex-wrap:wrap; width:120px;
+    box-shadow:0 10px 24px rgba(0,0,0,.4);
+  }
+  .swatch{width:17px;height:17px;border-radius:50%;cursor:pointer;border:1px solid rgba(0,0,0,.2);flex-shrink:0;}
+  .swatch:hover{transform:scale(1.15);}
+  .swatch.auto{background:var(--panel); position:relative; border:1px solid var(--panel-border);}
+  .swatch.auto::after{content:'';position:absolute;left:2px;right:2px;top:50%;height:1px;background:var(--text-faint);transform:rotate(-40deg);}
+
   .card-del{
     flex-shrink:0;
     width:20px;height:20px;
@@ -278,7 +366,7 @@
   .card:hover .card-del{opacity:1;}
   .card-del:hover{background:var(--danger); color:#fff;}
 
-  .card-body{padding:10px 12px 12px;font-size:13px;line-height:1.5;}
+  .card-body{padding:10px 12px 12px;font-size:13px;line-height:1.5;flex:1 1 auto;overflow:auto;}
 
   /* note */
   .note-text{
@@ -422,6 +510,31 @@
   .link-title{font-weight:600;font-size:13px;}
   .link-domain{font-family:var(--font-mono); font-size:10px; color:var(--card-ink-soft); text-transform:uppercase; letter-spacing:.05em;}
 
+  /* resize handle */
+  .resize-handle{
+    position:absolute; right:0; bottom:0;
+    width:16px;height:16px;
+    cursor:nwse-resize;
+    background: linear-gradient(135deg, transparent 0 46%, var(--card-ink-soft) 46% 52%, transparent 52% 61%, var(--card-ink-soft) 61% 67%, transparent 67% 76%, var(--card-ink-soft) 76% 82%, transparent 82% 100%);
+    opacity:0;
+    transition:opacity .12s;
+    border-bottom-right-radius:var(--radius);
+  }
+  .card:hover .resize-handle{opacity:.6;}
+  .resize-handle:hover{opacity:1 !important;}
+
+  /* ---------- SNAP GUIDES ---------- */
+  .snap-guide{
+    position:absolute;
+    background:var(--accent);
+    pointer-events:none;
+    z-index:40;
+    display:none;
+    box-shadow:0 0 6px rgba(232,163,61,0.6);
+  }
+  .snap-guide-v{ width:1px; top:-4000px; height:8000px; }
+  .snap-guide-h{ height:1px; left:-4000px; width:8000px; }
+
   /* ---------- FAB ---------- */
   .fab-wrap{position:fixed; right:28px; bottom:28px; z-index:100;}
   .fab{
@@ -472,11 +585,43 @@
     color:var(--text-hi);
   }
 
+  /* ---------- PRINT ---------- */
+  #printArea{display:none;}
+  @media print{
+    body *{visibility:hidden;}
+    #printArea, #printArea *{visibility:visible;}
+    #printArea{display:block !important; position:absolute; left:0; top:0; margin:0; padding:0;}
+    body{overflow:visible !important; background:#fff;}
+    @page{margin:12mm;}
+  }
+  .print-board-title{font-family:var(--font-display); font-size:24px; font-weight:700; margin:0 0 4px; color:#111;}
+  .print-board-sub{font-family:var(--font-mono); font-size:10px; letter-spacing:.08em; text-transform:uppercase; color:#999; margin-bottom:10px;}
+  .print-phase{page-break-after:always;}
+  .print-phase:last-child{page-break-after:auto;}
+  .print-phase-header{display:flex; align-items:baseline; gap:10px; margin:22px 0 12px;}
+  .pp-index{font-family:var(--font-mono); font-size:10px; letter-spacing:.08em; color:#999;}
+  .pp-name{font-family:var(--font-mono); font-size:16px; font-weight:700; text-transform:uppercase; letter-spacing:.03em; color:#111;}
+  .print-board{position:relative; border:1px solid #ddd; background:#fbfaf7; -webkit-print-color-adjust:exact; print-color-adjust:exact;}
+  .print-empty{padding:22px; font-family:var(--font-mono); font-size:11px; color:#999;}
+  .print-card{
+    position:absolute; background:#fff; border:1px solid #ddd; border-left:4px solid #999;
+    border-radius:6px; overflow:hidden;
+    -webkit-print-color-adjust:exact; print-color-adjust:exact;
+  }
+  .print-card-head{padding:6px 8px; border-bottom:1px solid #eee;}
+  .pc-tag{font-family:var(--font-mono); font-size:8px; text-transform:uppercase; letter-spacing:.08em; color:#999; margin-right:6px;}
+  .pc-title{font-weight:700; font-size:11px; color:#111;}
+  .print-card-body{padding:8px; font-size:10.5px; color:#222; white-space:pre-wrap; word-break:break-word;}
+  .pc-img{width:100%; display:block; border-radius:4px;}
+  .pc-caption{margin-top:4px; font-size:9.5px; color:#777;}
+  .pc-check{font-size:10.5px; margin-bottom:3px;}
+  .pc-linkbox{font-size:10px; word-break:break-all;}
+  .pc-domain{font-family:var(--font-mono); font-size:9px; color:#888; text-transform:uppercase;}
+  .pc-date-big{font-family:var(--font-display); font-size:15px; font-weight:700; color:#111;}
+
   /* scrollbars */
-  .canvas-wrap::-webkit-scrollbar{width:11px;height:11px;}
-  .canvas-wrap::-webkit-scrollbar-track{background:var(--panel);}
-  .canvas-wrap::-webkit-scrollbar-thumb{background:#3a3d3e;border-radius:6px;border:2px solid var(--panel);}
-  .canvas-wrap::-webkit-scrollbar-thumb:hover{background:#4a4d4e;}
+  .card-body::-webkit-scrollbar{width:8px;}
+  .card-body::-webkit-scrollbar-thumb{background:#00000022;border-radius:6px;}
 </style>
 </head>
 <body>
@@ -488,15 +633,27 @@
       <div id="boardTitle" contenteditable="true" spellcheck="false">Quadro Criativo</div>
     </div>
     <div class="top-actions">
+      <button class="text-btn" id="openBtn" title="Abrir um arquivo de quadro salvo">⇧ Abrir</button>
+      <button class="text-btn" id="downloadBtn" title="Salvar e baixar este quadro como arquivo">⇩ Baixar</button>
+      <button class="text-btn" id="printBtn" title="Imprimir todas as fases">⎙ Imprimir</button>
       <div class="icon-btn" id="resetBtn" title="Reiniciar quadro">↺</div>
+      <input type="file" id="fileInput" accept="application/json,.json" style="display:none">
     </div>
   </div>
 
   <div class="phase-bar" id="phaseBar"></div>
 
   <div class="canvas-wrap" id="canvasWrap">
-    <div class="canvas" id="canvas"></div>
+    <div id="canvas"></div>
   </div>
+</div>
+
+<div class="zoom-controls">
+  <button class="zc-btn" id="zoomInBtn" title="Aproximar (zoom +)">+</button>
+  <button class="zc-btn label" id="zoomLabelBtn" title="Redefinir para 100%">100%</button>
+  <button class="zc-btn" id="zoomOutBtn" title="Afastar (zoom −)">−</button>
+  <div class="zc-sep"></div>
+  <button class="zc-btn focus-btn disabled" id="focusBtn" title="Selecione um card e clique aqui para focar nele">◎</button>
 </div>
 
 <div class="fab-wrap">
@@ -511,17 +668,20 @@
   <button class="fab" id="fabBtn">+</button>
 </div>
 
+<div id="printArea"></div>
+
 <script>
 (function(){
   "use strict";
 
-  const TYPE_COLOR = {
-    note: 'var(--c-note)', image:'var(--c-image)', video:'var(--c-video)',
-    date:'var(--c-date)', checklist:'var(--c-checklist)', link:'var(--c-link)'
+  const TYPE_DEFAULT_HEX = {
+    note:'#8FA694', image:'#5E93C2', video:'#A084C9',
+    date:'#E8A33D', checklist:'#4FA085', link:'#D97B4E'
   };
   const TYPE_LABEL = {
     note:'Nota', image:'Imagem', video:'Vídeo', date:'Data', checklist:'Checklist', link:'Link'
   };
+  const PALETTE = ['#8FA694','#5E93C2','#A084C9','#E8A33D','#4FA085','#D97B4E','#CC5A45','#B9B4A5'];
 
   const DEFAULT_PHASES = [
     {id:'p1', name:'Fase Inicial'},
@@ -538,10 +698,16 @@
   };
   let cardsCache = {}; // phaseId -> array of cards (loaded lazily)
   let placeCounter = {};
+  let selectedCardId = null;
+  let view = { zoom: 1, panX: 100, panY: 80 };
+
+  const canvasWrap = document.getElementById('canvasWrap');
+  const canvasEl = document.getElementById('canvas');
 
   const $ = (sel, root) => (root||document).querySelector(sel);
   const $$ = (sel, root) => Array.from((root||document).querySelectorAll(sel));
   const uid = () => Math.random().toString(36).slice(2,9) + Date.now().toString(36).slice(-4);
+  const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
 
   function escapeHtml(s){
     return (s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -602,6 +768,8 @@
     await loadCards(state.activePhase);
     renderPhaseBar();
     renderCanvas();
+    applyTransform();
+    setupPanZoom();
   }
 
   // ---------------- BOARD TITLE ----------------
@@ -623,6 +791,7 @@
     state.phases = DEFAULT_PHASES.map(p => ({...p}));
     state.activePhase = state.phases[0].id;
     cardsCache = {};
+    selectedCardId = null;
     await saveMeta();
     $('#boardTitle').textContent = state.title;
     await loadCards(state.activePhase);
@@ -675,6 +844,7 @@
         if(tab.getAttribute('contenteditable') === 'true') return;
         if(state.activePhase === phase.id) return;
         state.activePhase = phase.id;
+        selectedCardId = null;
         await saveMeta();
         await loadCards(phase.id);
         renderPhaseBar();
@@ -734,7 +904,6 @@
       await saveCards(id);
       renderPhaseBar();
       renderCanvas();
-      // auto-focus rename
       requestAnimationFrame(() => {
         const t = $(`.phase-tab[data-id="${id}"] .tab-label`);
         if(t){
@@ -755,33 +924,56 @@
   }
 
   // ---------------- CANVAS / CARDS ----------------
-  function renderCanvas(){
-    const canvas = $('#canvas');
-    canvas.innerHTML = '';
-    const cards = cardsCache[state.activePhase] || [];
-    if(cards.length === 0){
-      const hint = document.createElement('div');
-      hint.className = 'empty-hint';
-      hint.innerHTML = `<b>Essa fase ainda está vazia.</b><br>Clique no botão <b>+</b> no canto inferior direito para adicionar notas, imagens, vídeos, prazos, checklists ou links. Arraste os cards pelo cabeçalho para organizar o espaço.`;
-      canvas.appendChild(hint);
-    }
-    cards.forEach(card => canvas.appendChild(buildCardEl(card)));
+  function buildEmptyHint(){
+    const hint = document.createElement('div');
+    hint.className = 'empty-hint';
+    hint.innerHTML = `<b>Essa fase ainda está vazia.</b><br>Clique no botão <b>+</b> no canto inferior direito para adicionar notas, imagens, vídeos, prazos, checklists ou links. Arraste os cards pelo cabeçalho para mover, puxe o canto para redimensionar, e use a bolinha colorida para trocar a cor.`;
+    return hint;
   }
 
-  function nextPosition(){
+  function renderCanvas(){
+    canvasEl.innerHTML = '';
+    const cards = cardsCache[state.activePhase] || [];
+    if(cards.length === 0){
+      canvasEl.appendChild(buildEmptyHint());
+    }
+    cards.forEach(card => canvasEl.appendChild(buildCardEl(card)));
+    updateFocusBtnState();
+  }
+
+  // Atualiza só o corpo de UM card específico, sem tocar em nenhum outro card já renderizado.
+  function refreshCardBody(card){
+    const el = canvasEl.querySelector(`.card[data-id="${card.id}"]`);
+    if(!el) return;
+    const body = el.querySelector('.card-body');
+    body.innerHTML = '';
+    body.appendChild(buildBody(card));
+  }
+
+  function screenToWorld(sx, sy){
+    return { x: (sx - view.panX) / view.zoom, y: (sy - view.panY) / view.zoom };
+  }
+
+  // Nova posição: sempre no centro da área visível da tela, com um leve espiral
+  // para o caso de vários cards serem adicionados em sequência sem se sobrepor.
+  function nextPosition(type){
     const phaseId = state.activePhase;
     placeCounter[phaseId] = (placeCounter[phaseId] || 0) + 1;
     const n = placeCounter[phaseId] - 1;
-    const col = n % 6, row = Math.floor(n/6) % 6;
-    return { x: 50 + col*70 + (row%2)*20, y: 40 + row*60 + col*8 };
+    const rect = canvasWrap.getBoundingClientRect();
+    const center = screenToWorld(rect.width/2, rect.height/2);
+    const w = (type === 'image' || type === 'video') ? 290 : 250;
+    const h = 130;
+    const angle = n * 0.85;
+    const radius = Math.min(n, 8) * 16;
+    const jitterX = n === 0 ? 0 : Math.cos(angle) * radius;
+    const jitterY = n === 0 ? 0 : Math.sin(angle) * radius;
+    return { x: center.x - w/2 + jitterX, y: center.y - h/2 + jitterY };
   }
 
   async function addCard(type){
-    const pos = nextPosition();
-    const base = {
-      id: uid(), type, title: '',
-      x: pos.x, y: pos.y
-    };
+    const pos = nextPosition(type);
+    const base = { id: uid(), type, title: '', x: pos.x, y: pos.y, w: null, h: null, color: null };
     let content = {};
     if(type === 'note') content = {text:''};
     if(type === 'image') content = {url:'', caption:''};
@@ -793,8 +985,14 @@
     const cards = cardsCache[state.activePhase];
     cards.push(card);
     await saveCards(state.activePhase);
-    renderCanvas();
-    // focus title for quick naming
+
+    // Insere só o novo card no DOM — não recria nem reformata os cards existentes.
+    if(cards.length === 1){
+      canvasEl.innerHTML = '';
+    }
+    canvasEl.appendChild(buildCardEl(card));
+    selectCard(card.id);
+
     requestAnimationFrame(() => {
       const el = $(`.card[data-id="${card.id}"] .card-title`);
       if(el) el.focus();
@@ -823,14 +1021,32 @@
     try{ return new URL(url).hostname.replace('www.',''); }catch(e){ return url; }
   }
 
+  function cardAccentColor(card){
+    return card.color || TYPE_DEFAULT_HEX[card.type];
+  }
+
+  function closeAllColorPopovers(){
+    $$('.color-popover').forEach(p => p.remove());
+  }
+
   function buildCardEl(card){
     const el = document.createElement('div');
-    el.className = 'card';
+    el.className = 'card' + (card.id === selectedCardId ? ' selected' : '');
     el.dataset.id = card.id;
     el.dataset.type = card.type;
     el.style.left = card.x + 'px';
     el.style.top = card.y + 'px';
-    el.style.borderLeftColor = TYPE_COLOR[card.type];
+    if(card.w) el.style.width = card.w + 'px';
+    if(card.h) el.style.height = card.h + 'px';
+    el.style.borderLeftColor = cardAccentColor(card);
+
+    // select on click (ignore interactive children)
+    el.addEventListener('click', (e) => {
+      if(e.target.closest('.card-del') || e.target.closest('.resize-handle') ||
+         e.target.closest('.color-dot') || e.target.closest('.color-popover') ||
+         e.target.isContentEditable) return;
+      selectCard(card.id);
+    });
 
     // head
     const head = document.createElement('div');
@@ -851,6 +1067,49 @@
     title.addEventListener('keydown', e => { if(e.key==='Enter'){ e.preventDefault(); title.blur(); } });
     head.appendChild(title);
 
+    // color dot + popover
+    const colorDot = document.createElement('div');
+    colorDot.className = 'color-dot';
+    colorDot.style.background = cardAccentColor(card);
+    colorDot.title = 'Cor do card';
+    colorDot.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const existing = head.querySelector('.color-popover');
+      closeAllColorPopovers();
+      if(existing) return; // was open -> just closed it
+      const pop = document.createElement('div');
+      pop.className = 'color-popover';
+      PALETTE.forEach(hex => {
+        const sw = document.createElement('div');
+        sw.className = 'swatch';
+        sw.style.background = hex;
+        sw.addEventListener('click', async (ev) => {
+          ev.stopPropagation();
+          card.color = hex;
+          el.style.borderLeftColor = hex;
+          colorDot.style.background = hex;
+          pop.remove();
+          await saveCards(state.activePhase);
+        });
+        pop.appendChild(sw);
+      });
+      const auto = document.createElement('div');
+      auto.className = 'swatch auto';
+      auto.title = 'Cor padrão do tipo';
+      auto.addEventListener('click', async (ev) => {
+        ev.stopPropagation();
+        card.color = null;
+        const def = TYPE_DEFAULT_HEX[card.type];
+        el.style.borderLeftColor = def;
+        colorDot.style.background = def;
+        pop.remove();
+        await saveCards(state.activePhase);
+      });
+      pop.appendChild(auto);
+      head.appendChild(pop);
+    });
+    head.appendChild(colorDot);
+
     const del = document.createElement('div');
     del.className = 'card-del';
     del.textContent = '✕';
@@ -860,8 +1119,14 @@
       const arr = cardsCache[state.activePhase];
       const idx = arr.findIndex(c => c.id === card.id);
       if(idx > -1) arr.splice(idx,1);
+      if(selectedCardId === card.id) selectedCardId = null;
       await saveCards(state.activePhase);
-      renderCanvas();
+      el.remove();
+      if(arr.length === 0){
+        canvasEl.innerHTML = '';
+        canvasEl.appendChild(buildEmptyHint());
+      }
+      updateFocusBtnState();
     });
     head.appendChild(del);
 
@@ -873,6 +1138,12 @@
     body.className = 'card-body';
     body.appendChild(buildBody(card));
     el.appendChild(body);
+
+    // resize handle
+    const rh = document.createElement('div');
+    rh.className = 'resize-handle';
+    el.appendChild(rh);
+    enableResize(el, rh, card);
 
     return el;
   }
@@ -915,7 +1186,7 @@
         if(!v) return;
         c.url = v;
         await saveCards(state.activePhase);
-        renderCanvas();
+        refreshCardBody(card);
       };
       btn.addEventListener('click', commit);
       input.addEventListener('keydown', e => { if(e.key==='Enter'){ e.preventDefault(); commit(); } });
@@ -969,7 +1240,7 @@
     editLink.addEventListener('click', async () => {
       c.url = '';
       await saveCards(state.activePhase);
-      renderCanvas();
+      refreshCardBody(card);
     });
     wrap.appendChild(editLink);
   }
@@ -1010,7 +1281,7 @@
         if(!input.value) return;
         c.date = input.value;
         await saveCards(state.activePhase);
-        renderCanvas();
+        refreshCardBody(card);
       });
       wrap.appendChild(input);
       return;
@@ -1030,9 +1301,9 @@
       input.addEventListener('change', async () => {
         c.date = input.value || c.date;
         await saveCards(state.activePhase);
-        renderCanvas();
+        refreshCardBody(card);
       });
-      input.addEventListener('blur', () => { if(input.value) { c.date = input.value; saveCards(state.activePhase); } renderCanvas(); });
+      input.addEventListener('blur', () => { if(input.value) { c.date = input.value; saveCards(state.activePhase); } refreshCardBody(card); });
       disp.replaceChild(input, big);
       input.focus();
     });
@@ -1071,7 +1342,7 @@
       const item = {id:uid(), text:'', done:false};
       c.items.push(item);
       await saveCards(state.activePhase);
-      renderCanvas();
+      refreshCardBody(card);
       requestAnimationFrame(() => {
         const el = $(`.card[data-id="${card.id}"] .ci-text[data-item="${item.id}"]`);
         if(el) el.focus();
@@ -1106,7 +1377,7 @@
       card.content.items = card.content.items.filter(i => i.id !== item.id);
       if(card.content.items.length === 0) card.content.items.push({id:uid(), text:'', done:false});
       await saveCards(state.activePhase);
-      renderCanvas();
+      refreshCardBody(card);
     });
     row.appendChild(cb); row.appendChild(txt); row.appendChild(del);
     return row;
@@ -1129,7 +1400,7 @@
         c.url = v;
         if(!c.label) c.label = domainOf(v);
         await saveCards(state.activePhase);
-        renderCanvas();
+        refreshCardBody(card);
       };
       btn.addEventListener('click', commit);
       input.addEventListener('keydown', e => { if(e.key==='Enter'){ e.preventDefault(); commit(); } });
@@ -1154,13 +1425,32 @@
     wrap.appendChild(body);
   }
 
-  // ---------------- DRAG ----------------
+  // ---------------- SELECTION ----------------
+  function selectCard(id){
+    selectedCardId = id;
+    $$('.card').forEach(el => el.classList.toggle('selected', el.dataset.id === id));
+    updateFocusBtnState();
+  }
+  function deselectCard(){
+    if(!selectedCardId) return;
+    selectedCardId = null;
+    $$('.card.selected').forEach(el => el.classList.remove('selected'));
+    updateFocusBtnState();
+  }
+  function updateFocusBtnState(){
+    const btn = $('#focusBtn');
+    btn.classList.toggle('disabled', !selectedCardId);
+  }
+
+  // ---------------- DRAG (move card + alinhamento magnético) ----------------
+  const SNAP_THRESHOLD_PX = 8; // em pixels de tela, convertido para unidades do mundo conforme o zoom
+
   function enableDrag(cardEl, handle, card){
     let startX, startY, origX, origY, dragging = false;
-    const canvasWrap = $('#canvasWrap');
+    let guideV = null, guideH = null;
 
     handle.addEventListener('pointerdown', (e) => {
-      if(e.target.closest('.card-del')) return;
+      if(e.target.closest('.card-del') || e.target.closest('.color-dot') || e.target.closest('.color-popover')) return;
       if(e.target.isContentEditable) return;
       dragging = true;
       cardEl.classList.add('dragging');
@@ -1168,28 +1458,220 @@
       origX = card.x; origY = card.y;
       handle.setPointerCapture(e.pointerId);
       e.preventDefault();
+      e.stopPropagation();
     });
     handle.addEventListener('pointermove', (e) => {
       if(!dragging) return;
-      const dx = e.clientX - startX;
-      const dy = e.clientY - startY;
-      let nx = origX + dx;
-      let ny = origY + dy;
-      nx = Math.max(0, Math.min(nx, 2600 - cardEl.offsetWidth));
-      ny = Math.max(0, Math.min(ny, 1700 - 40));
-      card.x = nx; card.y = ny;
-      cardEl.style.left = nx + 'px';
-      cardEl.style.top = ny + 'px';
+      const dx = (e.clientX - startX) / view.zoom;
+      const dy = (e.clientY - startY) / view.zoom;
+      let candX = origX + dx;
+      let candY = origY + dy;
+
+      const cw = cardEl.offsetWidth, ch = cardEl.offsetHeight;
+      const thr = SNAP_THRESHOLD_PX / view.zoom;
+      let bestXdiff = thr, snapX = null, guideXpos = null;
+      let bestYdiff = thr, snapY = null, guideYpos = null;
+
+      const others = (cardsCache[state.activePhase] || []).filter(c => c.id !== card.id);
+      others.forEach(o => {
+        const oEl = canvasEl.querySelector(`.card[data-id="${o.id}"]`);
+        if(!oEl) return;
+        const ow = oEl.offsetWidth, oh = oEl.offsetHeight;
+        const oLeft = o.x, oRight = o.x + ow, oCx = o.x + ow/2;
+        const oTop = o.y, oBottom = o.y + oh, oCy = o.y + oh/2;
+        const cLeft = candX, cRight = candX + cw, cCx = candX + cw/2;
+        const cTop = candY, cBottom = candY + ch, cCy = candY + ch/2;
+
+        [
+          [cLeft - oLeft, oLeft, oLeft],
+          [cRight - oRight, oRight - cw, oRight],
+          [cCx - oCx, oCx - cw/2, oCx],
+          [cLeft - oRight, oRight, oRight],
+          [cRight - oLeft, oLeft - cw, oLeft]
+        ].forEach(([diff, snapped, guidePos]) => {
+          if(Math.abs(diff) < bestXdiff){ bestXdiff = Math.abs(diff); snapX = snapped; guideXpos = guidePos; }
+        });
+
+        [
+          [cTop - oTop, oTop, oTop],
+          [cBottom - oBottom, oBottom - ch, oBottom],
+          [cCy - oCy, oCy - ch/2, oCy],
+          [cTop - oBottom, oBottom, oBottom],
+          [cBottom - oTop, oTop - ch, oTop]
+        ].forEach(([diff, snapped, guidePos]) => {
+          if(Math.abs(diff) < bestYdiff){ bestYdiff = Math.abs(diff); snapY = snapped; guideYpos = guidePos; }
+        });
+      });
+
+      if(snapX !== null) candX = snapX;
+      if(snapY !== null) candY = snapY;
+
+      card.x = candX; card.y = candY;
+      cardEl.style.left = candX + 'px';
+      cardEl.style.top = candY + 'px';
+
+      if(snapX !== null){
+        if(!guideV){ guideV = document.createElement('div'); guideV.className = 'snap-guide snap-guide-v'; canvasEl.appendChild(guideV); }
+        guideV.style.left = guideXpos + 'px';
+        guideV.style.display = 'block';
+      } else if(guideV){ guideV.style.display = 'none'; }
+
+      if(snapY !== null){
+        if(!guideH){ guideH = document.createElement('div'); guideH.className = 'snap-guide snap-guide-h'; canvasEl.appendChild(guideH); }
+        guideH.style.top = guideYpos + 'px';
+        guideH.style.display = 'block';
+      } else if(guideH){ guideH.style.display = 'none'; }
     });
     const end = (e) => {
       if(!dragging) return;
       dragging = false;
       cardEl.classList.remove('dragging');
       try{ handle.releasePointerCapture(e.pointerId); }catch(err){}
+      if(guideV){ guideV.remove(); guideV = null; }
+      if(guideH){ guideH.remove(); guideH = null; }
       debouncedSave();
     };
     handle.addEventListener('pointerup', end);
     handle.addEventListener('pointercancel', end);
+  }
+
+  // ---------------- RESIZE ----------------
+  function enableResize(cardEl, handle, card){
+    let startX, startY, origW, origH, resizing = false;
+
+    handle.addEventListener('pointerdown', (e) => {
+      resizing = true;
+      origW = card.w || cardEl.offsetWidth;
+      origH = card.h || cardEl.offsetHeight;
+      startX = e.clientX; startY = e.clientY;
+      handle.setPointerCapture(e.pointerId);
+      e.preventDefault();
+      e.stopPropagation();
+    });
+    handle.addEventListener('pointermove', (e) => {
+      if(!resizing) return;
+      const dx = (e.clientX - startX) / view.zoom;
+      const dy = (e.clientY - startY) / view.zoom;
+      const newW = Math.max(180, origW + dx);
+      const newH = Math.max(90, origH + dy);
+      card.w = newW; card.h = newH;
+      cardEl.style.width = newW + 'px';
+      cardEl.style.height = newH + 'px';
+    });
+    const end = (e) => {
+      if(!resizing) return;
+      resizing = false;
+      try{ handle.releasePointerCapture(e.pointerId); }catch(err){}
+      debouncedSave();
+    };
+    handle.addEventListener('pointerup', end);
+    handle.addEventListener('pointercancel', end);
+  }
+
+  // ---------------- PAN & ZOOM ----------------
+  function applyTransform(){
+    canvasEl.style.transform = `translate(${view.panX}px, ${view.panY}px) scale(${view.zoom})`;
+    const size = 26 * view.zoom;
+    canvasWrap.style.backgroundSize = size + 'px ' + size + 'px';
+    canvasWrap.style.backgroundPosition = (view.panX % size) + 'px ' + (view.panY % size) + 'px';
+    $('#zoomLabelBtn').textContent = Math.round(view.zoom*100) + '%';
+  }
+
+  function setZoom(newZoomRaw, cx, cy){
+    const newZoom = clamp(newZoomRaw, 0.2, 3);
+    const wx = (cx - view.panX) / view.zoom;
+    const wy = (cy - view.panY) / view.zoom;
+    view.zoom = newZoom;
+    view.panX = cx - wx*newZoom;
+    view.panY = cy - wy*newZoom;
+    applyTransform();
+  }
+
+  function viewportCenter(){
+    const rect = canvasWrap.getBoundingClientRect();
+    return { x: rect.width/2, y: rect.height/2 };
+  }
+
+  function focusOnCard(cardId){
+    const card = getCard(cardId);
+    if(!card) return;
+    const el = $(`.card[data-id="${cardId}"]`);
+    if(!el) return;
+    const w = el.offsetWidth, h = el.offsetHeight;
+    const rect = canvasWrap.getBoundingClientRect();
+    const targetZoom = clamp(Math.min((rect.width-120)/w, (rect.height-120)/h), 0.3, 2.5);
+    const worldCx = card.x + w/2;
+    const worldCy = card.y + h/2;
+    const targetPanX = rect.width/2 - worldCx*targetZoom;
+    const targetPanY = rect.height/2 - worldCy*targetZoom;
+
+    canvasEl.style.transition = 'transform .38s cubic-bezier(.2,.8,.2,1)';
+    view.zoom = targetZoom;
+    view.panX = targetPanX;
+    view.panY = targetPanY;
+    applyTransform();
+    setTimeout(() => { canvasEl.style.transition = ''; }, 400);
+  }
+
+  function setupPanZoom(){
+    canvasWrap.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      const rect = canvasWrap.getBoundingClientRect();
+      const mx = e.clientX - rect.left;
+      const my = e.clientY - rect.top;
+      const factor = Math.exp(-e.deltaY * 0.0012);
+      setZoom(view.zoom * factor, mx, my);
+    }, {passive:false});
+
+    let panning = false, panStartX=0, panStartY=0, panOrigX=0, panOrigY=0;
+    canvasWrap.addEventListener('pointerdown', (e) => {
+      if(e.target.closest('.card')) return;
+      panning = true;
+      canvasWrap.classList.add('panning');
+      panStartX = e.clientX; panStartY = e.clientY;
+      panOrigX = view.panX; panOrigY = view.panY;
+      canvasWrap.setPointerCapture(e.pointerId);
+      closeAllColorPopovers();
+      deselectCard();
+    });
+    canvasWrap.addEventListener('pointermove', (e) => {
+      if(!panning) return;
+      view.panX = panOrigX + (e.clientX - panStartX);
+      view.panY = panOrigY + (e.clientY - panStartY);
+      applyTransform();
+    });
+    const stopPan = (e) => {
+      if(!panning) return;
+      panning = false;
+      canvasWrap.classList.remove('panning');
+      try{ canvasWrap.releasePointerCapture(e.pointerId); }catch(err){}
+    };
+    canvasWrap.addEventListener('pointerup', stopPan);
+    canvasWrap.addEventListener('pointercancel', stopPan);
+
+    $('#zoomInBtn').addEventListener('click', () => {
+      const c = viewportCenter();
+      setZoom(view.zoom * 1.25, c.x, c.y);
+    });
+    $('#zoomOutBtn').addEventListener('click', () => {
+      const c = viewportCenter();
+      setZoom(view.zoom / 1.25, c.x, c.y);
+    });
+    $('#zoomLabelBtn').addEventListener('click', () => {
+      const c = viewportCenter();
+      setZoom(1, c.x, c.y);
+    });
+    $('#focusBtn').addEventListener('click', () => {
+      if(!selectedCardId) return;
+      focusOnCard(selectedCardId);
+    });
+
+    document.addEventListener('keydown', (e) => {
+      if(e.key === 'Escape'){ deselectCard(); closeAllColorPopovers(); }
+    });
+    document.addEventListener('click', (e) => {
+      if(!e.target.closest('.color-dot') && !e.target.closest('.color-popover')) closeAllColorPopovers();
+    });
   }
 
   // ---------------- FAB MENU ----------------
@@ -1211,6 +1693,223 @@
       fabBtn.classList.remove('open');
       fabMenu.classList.remove('open');
     }
+  });
+
+  // ---------------- PRINT ----------------
+  function printFallbackHeight(c){
+    switch(c.type){
+      case 'image': case 'video': return 200;
+      case 'checklist': return 56 + ((c.content.items && c.content.items.length) || 1) * 22;
+      case 'date': return 110;
+      case 'link': return 90;
+      default: return 130;
+    }
+  }
+
+  function renderPrintCard(card, width){
+    const el = document.createElement('div');
+    el.className = 'print-card';
+    el.style.borderLeftColor = cardAccentColor(card);
+    el.style.width = width + 'px';
+
+    const head = document.createElement('div');
+    head.className = 'print-card-head';
+    const tag = document.createElement('span');
+    tag.className = 'pc-tag';
+    tag.textContent = TYPE_LABEL[card.type];
+    const ti = document.createElement('span');
+    ti.className = 'pc-title';
+    ti.textContent = card.title || 'Sem título';
+    head.appendChild(tag); head.appendChild(ti);
+    el.appendChild(head);
+
+    const body = document.createElement('div');
+    body.className = 'print-card-body';
+    const c = card.content;
+
+    if(card.type === 'note'){
+      body.textContent = c.text || '';
+    } else if(card.type === 'image'){
+      if(c.url){ const img = document.createElement('img'); img.className='pc-img'; img.src = c.url; body.appendChild(img); }
+      else { body.textContent = '(sem imagem)'; }
+      if(c.caption){ const cap = document.createElement('div'); cap.className='pc-caption'; cap.textContent = c.caption; body.appendChild(cap); }
+    } else if(card.type === 'video'){
+      const box = document.createElement('div'); box.className = 'pc-linkbox';
+      const dom = document.createElement('div'); dom.className='pc-domain'; dom.textContent = c.url ? domainOf(c.url) : '';
+      const u = document.createElement('div'); u.textContent = c.url || '(sem link)';
+      box.appendChild(dom); box.appendChild(u);
+      body.appendChild(box);
+      if(c.caption){ const cap = document.createElement('div'); cap.className='pc-caption'; cap.textContent = c.caption; body.appendChild(cap); }
+    } else if(card.type === 'date'){
+      const big = document.createElement('div'); big.className='pc-date-big';
+      big.textContent = c.date ? fmtDate(c.date) : '(sem data)';
+      body.appendChild(big);
+      if(c.label){ const l = document.createElement('div'); l.className='pc-caption'; l.textContent = c.label; body.appendChild(l); }
+    } else if(card.type === 'checklist'){
+      (c.items || []).forEach(it => {
+        const row = document.createElement('div'); row.className = 'pc-check';
+        row.textContent = (it.done ? '☑ ' : '☐ ') + (it.text || '');
+        body.appendChild(row);
+      });
+    } else if(card.type === 'link'){
+      const box = document.createElement('div'); box.className = 'pc-linkbox';
+      const ti2 = document.createElement('div'); ti2.style.fontWeight='700'; ti2.textContent = c.label || (c.url ? domainOf(c.url) : '(sem link)');
+      const dom = document.createElement('div'); dom.className='pc-domain'; dom.textContent = c.url || '';
+      box.appendChild(ti2); box.appendChild(dom);
+      body.appendChild(box);
+    }
+    el.appendChild(body);
+    return el;
+  }
+
+  async function printAll(){
+    await Promise.all(state.phases.map(p => loadCards(p.id)));
+    const container = $('#printArea');
+    container.innerHTML = '';
+
+    const boardTitle = document.createElement('div');
+    boardTitle.className = 'print-board-title';
+    boardTitle.textContent = state.title;
+    container.appendChild(boardTitle);
+
+    const sub = document.createElement('div');
+    sub.className = 'print-board-sub';
+    sub.textContent = `${state.phases.length} fase(s) — impresso em ${new Date().toLocaleDateString('pt-BR')}`;
+    container.appendChild(sub);
+
+    state.phases.forEach((phase, idx) => {
+      const cards = cardsCache[phase.id] || [];
+      const section = document.createElement('div');
+      section.className = 'print-phase';
+
+      const header = document.createElement('div');
+      header.className = 'print-phase-header';
+      const pi = document.createElement('span'); pi.className='pp-index'; pi.textContent = `FASE ${idx+1}/${state.phases.length}`;
+      const pn = document.createElement('span'); pn.className='pp-name'; pn.textContent = phase.name;
+      header.appendChild(pi); header.appendChild(pn);
+      section.appendChild(header);
+
+      const boardDiv = document.createElement('div');
+      boardDiv.className = 'print-board';
+
+      if(cards.length === 0){
+        boardDiv.style.height = '70px';
+        const empty = document.createElement('div');
+        empty.className = 'print-empty';
+        empty.textContent = 'Nenhum item nesta fase.';
+        boardDiv.appendChild(empty);
+      } else {
+        const dims = cards.map(c => ({
+          c,
+          w: c.w || (c.type==='image'||c.type==='video' ? 290 : 250),
+          h: c.h || printFallbackHeight(c)
+        }));
+        const minX = Math.min(...dims.map(d => d.c.x));
+        const minY = Math.min(...dims.map(d => d.c.y));
+        const maxX = Math.max(...dims.map(d => d.c.x + d.w));
+        const maxY = Math.max(...dims.map(d => d.c.y + d.h));
+        const pad = 50;
+        boardDiv.style.width = (maxX - minX + pad*2) + 'px';
+        boardDiv.style.height = (maxY - minY + pad*2) + 'px';
+        dims.forEach(d => {
+          const cardEl = renderPrintCard(d.c, d.w);
+          cardEl.style.left = (d.c.x - minX + pad) + 'px';
+          cardEl.style.top = (d.c.y - minY + pad) + 'px';
+          if(d.c.h) cardEl.style.height = d.h + 'px';
+          boardDiv.appendChild(cardEl);
+        });
+      }
+      section.appendChild(boardDiv);
+      container.appendChild(section);
+    });
+
+    window.print();
+  }
+
+  $('#printBtn').addEventListener('click', printAll);
+
+  // ---------------- SALVAR / BAIXAR ARQUIVO ----------------
+  function slugify(s){
+    return (s || 'quadro-criativo')
+      .toLowerCase()
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/(^-+|-+$)/g, '') || 'quadro-criativo';
+  }
+
+  async function downloadBoard(){
+    await Promise.all(state.phases.map(p => loadCards(p.id)));
+    const data = {
+      app: 'quadro-criativo',
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      title: state.title,
+      phases: state.phases,
+      activePhase: state.activePhase,
+      cards: state.phases.reduce((acc, p) => {
+        acc[p.id] = cardsCache[p.id] || [];
+        return acc;
+      }, {})
+    };
+    const blob = new Blob([JSON.stringify(data, null, 2)], {type: 'application/json'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = slugify(state.title) + '.json';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  async function importBoardFromFile(file){
+    let data;
+    try{
+      const text = await file.text();
+      data = JSON.parse(text);
+    }catch(err){
+      alert('Não foi possível ler esse arquivo. Verifique se é um arquivo .json exportado por este quadro.');
+      return;
+    }
+    if(!data || !Array.isArray(data.phases)){
+      alert('Esse arquivo não parece ser um quadro válido.');
+      return;
+    }
+    if(!confirm('Abrir este arquivo vai substituir o quadro atual pelas configurações salvas nele. Deseja continuar?')) return;
+
+    const oldPhases = state.phases;
+    for(const p of oldPhases){ await storageDelete('cards:'+p.id); }
+
+    state.title = data.title || 'Quadro Criativo';
+    state.phases = data.phases.map(p => ({ id: p.id || ('p'+uid()), name: p.name || 'Fase' }));
+    if(state.phases.length === 0){
+      state.phases = DEFAULT_PHASES.map(p => ({...p}));
+    }
+    state.activePhase = (data.activePhase && state.phases.some(p => p.id === data.activePhase))
+      ? data.activePhase
+      : state.phases[0].id;
+
+    cardsCache = {};
+    selectedCardId = null;
+    placeCounter = {};
+    for(const p of state.phases){
+      const arr = (data.cards && Array.isArray(data.cards[p.id])) ? data.cards[p.id] : [];
+      cardsCache[p.id] = arr;
+      await saveCards(p.id);
+    }
+    await saveMeta();
+
+    $('#boardTitle').textContent = state.title;
+    renderPhaseBar();
+    renderCanvas();
+  }
+
+  $('#downloadBtn').addEventListener('click', downloadBoard);
+  $('#openBtn').addEventListener('click', () => $('#fileInput').click());
+  $('#fileInput').addEventListener('change', async (e) => {
+    const file = e.target.files && e.target.files[0];
+    if(file) await importBoardFromFile(file);
+    e.target.value = '';
   });
 
   init();
