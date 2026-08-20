@@ -622,6 +622,75 @@
   /* scrollbars */
   .card-body::-webkit-scrollbar{width:8px;}
   .card-body::-webkit-scrollbar-thumb{background:#00000022;border-radius:6px;}
+
+  /* ---------- STARTUP OVERLAY / MODAL ---------- */
+  #startupOverlay{
+    position:fixed; inset:0; z-index:9999;
+    background:rgba(10,11,11,0.72);
+    backdrop-filter:blur(3px);
+    display:flex; align-items:center; justify-content:center;
+    padding:20px;
+  }
+  #startupOverlay.hidden{display:none;}
+  .startup-modal{
+    width:100%; max-width:440px;
+    background:var(--panel);
+    border:1px solid var(--panel-border);
+    border-radius:14px;
+    padding:28px 26px 24px;
+    box-shadow:0 20px 60px rgba(0,0,0,0.45);
+    font-family:var(--font-body);
+  }
+  .startup-eyebrow{
+    font-family:var(--font-mono); font-size:10.5px; letter-spacing:.14em;
+    color:var(--text-faint); text-transform:uppercase; margin-bottom:6px;
+  }
+  .startup-title{
+    font-family:var(--font-display); font-weight:600; font-size:22px;
+    color:var(--text-hi); margin-bottom:8px;
+  }
+  .startup-desc{
+    font-size:13px; line-height:1.5; color:var(--text-lo); margin-bottom:20px;
+  }
+  .startup-field{margin-bottom:14px;}
+  .startup-field label{
+    display:block; font-size:11.5px; font-weight:600; color:var(--text-lo);
+    margin-bottom:6px;
+  }
+  .startup-field input, .startup-field textarea{
+    width:100%; background:var(--bg-2); border:1px solid var(--panel-border);
+    border-radius:8px; color:var(--text-hi); font-family:var(--font-body);
+    font-size:13.5px; padding:9px 11px; outline:none; resize:vertical;
+  }
+  .startup-field input:focus, .startup-field textarea:focus{border-color:var(--accent);}
+  .startup-field textarea{min-height:70px;}
+  .startup-note{
+    display:flex; gap:8px; font-size:11.5px; line-height:1.5; color:var(--text-faint);
+    background:var(--bg-2); border:1px solid var(--panel-border); border-radius:8px;
+    padding:10px 11px; margin-bottom:18px;
+  }
+  .startup-actions{display:flex; gap:10px; justify-content:flex-end; flex-wrap:wrap;}
+  .startup-btn{
+    font-family:var(--font-body); font-size:13px; font-weight:600;
+    padding:10px 18px; border-radius:8px; cursor:pointer; border:1px solid transparent;
+    transition:.15s;
+  }
+  .startup-btn.primary{background:var(--accent); color:var(--accent-ink);}
+  .startup-btn.primary:hover{filter:brightness(1.06);}
+  .startup-btn.primary:disabled{opacity:.5; cursor:not-allowed;}
+  .startup-btn.ghost{background:transparent; color:var(--text-lo); border-color:var(--panel-border);}
+  .startup-btn.ghost:hover{color:var(--text-hi); border-color:var(--accent);}
+  .startup-error{
+    font-size:12px; color:var(--danger); margin:-6px 0 14px; display:none;
+  }
+  .startup-error.show{display:block;}
+  .startup-project-name{
+    font-family:var(--font-display); font-weight:600; font-size:17px; color:var(--text-hi);
+    margin-bottom:4px;
+  }
+  .startup-project-details{
+    font-size:12.5px; color:var(--text-lo); margin-bottom:18px; white-space:pre-wrap;
+  }
 </style>
 </head>
 <body>
@@ -629,7 +698,7 @@
 <div id="app">
   <div class="topbar">
     <div class="brand">
-      <div class="eyebrow">Painel de produção criativa</div>
+      <div class="eyebrow" id="projectEyebrow" title="Detalhes do projeto">Painel de produção criativa · 📁 salvando localmente</div>
       <div id="boardTitle" contenteditable="true" spellcheck="false">Quadro Criativo</div>
     </div>
     <div class="top-actions">
@@ -670,6 +739,8 @@
 
 <div id="printArea"></div>
 
+<div id="startupOverlay" class="hidden"></div>
+
 <script>
 (function(){
   "use strict";
@@ -693,6 +764,7 @@
 
   let state = {
     title: 'Quadro Criativo',
+    details: '',
     phases: [],
     activePhase: null,
   };
@@ -713,31 +785,124 @@
     return (s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   }
 
-  // ---------------- STORAGE ----------------
-  async function storageGet(key){
-    try{
-      const r = await window.storage.get(key, false);
-      return r ? JSON.parse(r.value) : null;
-    }catch(e){ return null; }
+  // ---------------- ARMAZENAMENTO LOCAL (pasta no computador do usuário, sem banco de dados) ----------------
+  const IDB_NAME = 'quadro-criativo-fs';
+  const IDB_STORE = 'handles';
+  const BOARD_FILENAME = 'quadro-criativo.json';
+  const MEDIA_DIRNAME = 'midia';
+
+  let dirHandle = null;      // FileSystemDirectoryHandle da pasta do projeto escolhida pelo usuário
+  let mediaDirHandle = null; // subpasta "midia" dentro da pasta do projeto
+  let writeQueue = Promise.resolve(); // serializa gravações no arquivo local
+
+  function openHandleDB(){
+    return new Promise((resolve, reject) => {
+      const req = indexedDB.open(IDB_NAME, 1);
+      req.onupgradeneeded = () => { req.result.createObjectStore(IDB_STORE); };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
   }
-  async function storageSet(key, value){
-    try{ await window.storage.set(key, JSON.stringify(value), false); }
-    catch(e){ console.error('storage set failed', key, e); }
+  async function idbSet(key, value){
+    const db = await openHandleDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(IDB_STORE, 'readwrite');
+      tx.objectStore(IDB_STORE).put(value, key);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
   }
-  async function storageDelete(key){
-    try{ await window.storage.delete(key, false); }catch(e){}
+  async function idbGet(key){
+    const db = await openHandleDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(IDB_STORE, 'readonly');
+      const req = tx.objectStore(IDB_STORE).get(key);
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+  }
+  async function idbDelete(key){
+    const db = await openHandleDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(IDB_STORE, 'readwrite');
+      tx.objectStore(IDB_STORE).delete(key);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
   }
 
-  async function saveMeta(){
-    await storageSet('meta', {title: state.title, phases: state.phases, activePhase: state.activePhase});
+  async function verifyPermission(handle, mode){
+    const opts = { mode: mode || 'readwrite' };
+    try{
+      if((await handle.queryPermission(opts)) === 'granted') return true;
+      if((await handle.requestPermission(opts)) === 'granted') return true;
+    }catch(e){ /* handle pode ter sido revogado/apagado */ }
+    return false;
   }
-  async function saveCards(phaseId){
-    await storageSet('cards:'+phaseId, cardsCache[phaseId] || []);
+
+  async function ensureMediaDir(){
+    if(!mediaDirHandle) mediaDirHandle = await dirHandle.getDirectoryHandle(MEDIA_DIRNAME, {create:true});
+    return mediaDirHandle;
   }
+
+  async function readBoardFile(){
+    try{
+      const fh = await dirHandle.getFileHandle(BOARD_FILENAME);
+      const file = await fh.getFile();
+      const text = await file.text();
+      return JSON.parse(text);
+    }catch(e){ return null; }
+  }
+
+  async function writeBoardFileNow(){
+    if(!dirHandle) return;
+    const fh = await dirHandle.getFileHandle(BOARD_FILENAME, {create:true});
+    const writable = await fh.createWritable();
+    const data = {
+      app: 'quadro-criativo',
+      version: 1,
+      savedAt: new Date().toISOString(),
+      title: state.title,
+      details: state.details || '',
+      phases: state.phases,
+      activePhase: state.activePhase,
+      cards: state.phases.reduce((acc, p) => {
+        acc[p.id] = cardsCache[p.id] || [];
+        return acc;
+      }, {})
+    };
+    await writable.write(JSON.stringify(data, null, 2));
+    await writable.close();
+  }
+  // Serializa as gravações para evitar duas escritas simultâneas no mesmo arquivo
+  function writeBoardFile(){
+    writeQueue = writeQueue.then(writeBoardFileNow).catch(err => console.error('Falha ao salvar na pasta local', err));
+    return writeQueue;
+  }
+
+  // Salva um arquivo (imagem, vídeo ou áudio) enviado pelo usuário dentro da pasta "midia"
+  async function saveMediaFile(file){
+    await ensureMediaDir();
+    const ext = (file.name && file.name.includes('.')) ? file.name.slice(file.name.lastIndexOf('.')) : '';
+    const safeName = uid() + ext;
+    const fh = await mediaDirHandle.getFileHandle(safeName, {create:true});
+    const writable = await fh.createWritable();
+    await writable.write(file);
+    await writable.close();
+    return { fileName: safeName, mimeType: file.type || '' };
+  }
+  // Recupera um arquivo salvo localmente e gera uma URL temporária para exibição
+  async function getMediaObjectURL(fileName){
+    await ensureMediaDir();
+    const fh = await mediaDirHandle.getFileHandle(fileName);
+    const file = await fh.getFile();
+    return URL.createObjectURL(file);
+  }
+
+  async function saveMeta(){ await writeBoardFile(); }
+  async function saveCards(phaseId){ await writeBoardFile(); }
   async function loadCards(phaseId){
-    if(cardsCache[phaseId]) return cardsCache[phaseId];
-    const data = await storageGet('cards:'+phaseId);
-    cardsCache[phaseId] = data || [];
+    if(!cardsCache[phaseId]) cardsCache[phaseId] = [];
     return cardsCache[phaseId];
   }
 
@@ -751,25 +916,174 @@
     return `hsl(${phaseHue(index,total)}, 58%, 56%)`;
   }
 
-  // ---------------- INIT ----------------
-  async function init(){
-    const meta = await storageGet('meta');
-    if(meta && meta.phases && meta.phases.length){
-      state.title = meta.title || 'Quadro Criativo';
-      state.phases = meta.phases;
-      state.activePhase = meta.activePhase || meta.phases[0].id;
-    } else {
-      state.title = 'Quadro Criativo';
-      state.phases = DEFAULT_PHASES.map(p => ({...p}));
-      state.activePhase = state.phases[0].id;
-      await saveMeta();
-    }
+  // ---------------- INICIALIZAÇÃO DO QUADRO (depois que a pasta local já está definida) ----------------
+  function freshPhases(){
+    state.phases = DEFAULT_PHASES.map(p => ({...p}));
+    state.activePhase = state.phases[0].id;
+    cardsCache = {};
+    state.phases.forEach(p => cardsCache[p.id] = []);
+  }
+
+  async function startApp(){
     $('#boardTitle').textContent = state.title;
+    const eyebrow = $('#projectEyebrow');
+    if(eyebrow) eyebrow.title = state.details ? ('Detalhes do projeto: ' + state.details) : 'Nenhum detalhe adicionado ao projeto.';
     await loadCards(state.activePhase);
     renderPhaseBar();
     renderCanvas();
     applyTransform();
     setupPanZoom();
+  }
+
+  // ---------------- POPUP INICIAL: escolha/uso da pasta local do projeto ----------------
+  const overlay = document.getElementById('startupOverlay');
+  function showOverlay(html){
+    overlay.innerHTML = html;
+    overlay.classList.remove('hidden');
+  }
+  function hideOverlay(){
+    overlay.classList.add('hidden');
+    overlay.innerHTML = '';
+  }
+
+  function renderUnsupportedModal(){
+    showOverlay(`
+      <div class="startup-modal">
+        <div class="startup-eyebrow">Quadro Criativo</div>
+        <div class="startup-title">Navegador não suportado</div>
+        <div class="startup-desc">
+          Para salvar tudo localmente numa pasta do seu computador (sem usar nenhum banco de dados),
+          este quadro precisa de um navegador com suporte ao acesso ao sistema de arquivos —
+          como <b>Google Chrome</b> ou <b>Microsoft Edge</b> (versões recentes, em um site com https:// ou localhost).
+        </div>
+        <div class="startup-actions">
+          <button class="startup-btn primary" id="btnRetrySupport">Tentar novamente</button>
+        </div>
+      </div>
+    `);
+    document.getElementById('btnRetrySupport').addEventListener('click', boot);
+  }
+
+  function renderNewProjectModal(prefill){
+    showOverlay(`
+      <div class="startup-modal">
+        <div class="startup-eyebrow">Quadro Criativo</div>
+        <div class="startup-title">Iniciar novo projeto</div>
+        <div class="startup-desc">Dê um nome ao projeto e escolha (ou crie) uma pasta no seu computador. Tudo que você adicionar — notas, imagens, vídeos, áudios etc. — será salvo automaticamente nessa pasta, no seu próprio computador.</div>
+        <div class="startup-field">
+          <label for="spName">Nome do projeto</label>
+          <input type="text" id="spName" placeholder="Ex.: Comercial de Verão 2026" value="${escapeHtml(prefill && prefill.name || '')}">
+        </div>
+        <div class="startup-field">
+          <label for="spDetails">Detalhes</label>
+          <textarea id="spDetails" placeholder="Breve descrição, briefing, contexto do projeto...">${escapeHtml(prefill && prefill.details || '')}</textarea>
+        </div>
+        <div class="startup-note">📁 Ao clicar em "Iniciar projeto", o navegador vai pedir para você <b>selecionar ou criar uma pasta</b>. Autorize o acesso — é nela que tudo será salvo, localmente, sem nuvem e sem banco de dados.</div>
+        <div class="startup-error" id="spError">Não foi possível acessar a pasta. Tente novamente.</div>
+        <div class="startup-actions">
+          <button class="startup-btn primary" id="spStart">Iniciar projeto</button>
+        </div>
+      </div>
+    `);
+    const nameInput = document.getElementById('spName');
+    const startBtn = document.getElementById('spStart');
+    const errEl = document.getElementById('spError');
+    nameInput.focus();
+    startBtn.addEventListener('click', async () => {
+      const name = nameInput.value.trim() || 'Quadro Criativo';
+      const details = document.getElementById('spDetails').value.trim();
+      errEl.classList.remove('show');
+      startBtn.disabled = true;
+      startBtn.textContent = 'Aguardando pasta...';
+      try{
+        const handle = await window.showDirectoryPicker({ mode: 'readwrite' });
+        const ok = await verifyPermission(handle, 'readwrite');
+        if(!ok) throw new Error('permissão negada');
+        dirHandle = handle;
+        mediaDirHandle = null;
+        await idbSet('projectDirHandle', dirHandle);
+        await idbSet('projectInfo', { name, details });
+        state.title = name;
+        state.details = details;
+        freshPhases();
+        await ensureMediaDir();
+        await writeBoardFile();
+        hideOverlay();
+        await startApp();
+      }catch(err){
+        // usuário cancelou a escolha da pasta, ou a permissão foi negada
+        startBtn.disabled = false;
+        startBtn.textContent = 'Iniciar projeto';
+        if(err && err.name !== 'AbortError'){
+          errEl.classList.add('show');
+        }
+      }
+    });
+  }
+
+  function renderContinueModal(info){
+    showOverlay(`
+      <div class="startup-modal">
+        <div class="startup-eyebrow">Quadro Criativo</div>
+        <div class="startup-title">Continuar projeto</div>
+        <div class="startup-project-name">${escapeHtml(info && info.name || 'Quadro Criativo')}</div>
+        ${info && info.details ? `<div class="startup-project-details">${escapeHtml(info.details)}</div>` : ''}
+        <div class="startup-desc">Este quadro já está vinculado a uma pasta local. Conceda acesso a ela novamente para continuar de onde você parou, ou comece um novo projeto em outra pasta.</div>
+        <div class="startup-error" id="cpError">Não foi possível acessar essa pasta (ela pode ter sido movida, renomeada ou apagada).</div>
+        <div class="startup-actions">
+          <button class="startup-btn ghost" id="cpNew">Novo projeto</button>
+          <button class="startup-btn primary" id="cpContinue">Conceder acesso e continuar</button>
+        </div>
+      </div>
+    `);
+    const errEl = document.getElementById('cpError');
+    document.getElementById('cpNew').addEventListener('click', async () => {
+      await idbDelete('projectDirHandle');
+      await idbDelete('projectInfo');
+      dirHandle = null; mediaDirHandle = null;
+      renderNewProjectModal(info);
+    });
+    document.getElementById('cpContinue').addEventListener('click', async () => {
+      errEl.classList.remove('show');
+      try{
+        const ok = await verifyPermission(dirHandle, 'readwrite');
+        if(!ok) throw new Error('permissão negada');
+        await ensureMediaDir();
+        const data = await readBoardFile();
+        if(data && Array.isArray(data.phases) && data.phases.length){
+          state.title = data.title || (info && info.name) || 'Quadro Criativo';
+          state.details = data.details || (info && info.details) || '';
+          state.phases = data.phases;
+          state.activePhase = (data.activePhase && data.phases.some(p=>p.id===data.activePhase)) ? data.activePhase : data.phases[0].id;
+          cardsCache = {};
+          state.phases.forEach(p => cardsCache[p.id] = (data.cards && data.cards[p.id]) || []);
+        } else {
+          state.title = (info && info.name) || 'Quadro Criativo';
+          state.details = (info && info.details) || '';
+          freshPhases();
+          await writeBoardFile();
+        }
+        hideOverlay();
+        await startApp();
+      }catch(err){
+        errEl.classList.add('show');
+      }
+    });
+  }
+
+  async function boot(){
+    if(!window.showDirectoryPicker){
+      renderUnsupportedModal();
+      return;
+    }
+    const savedHandle = await idbGet('projectDirHandle').catch(() => null);
+    const savedInfo = await idbGet('projectInfo').catch(() => null);
+    if(savedHandle){
+      dirHandle = savedHandle;
+      renderContinueModal(savedInfo);
+    } else {
+      renderNewProjectModal(null);
+    }
   }
 
   // ---------------- BOARD TITLE ----------------
@@ -785,12 +1099,10 @@
 
   // ---------------- RESET ----------------
   $('#resetBtn').addEventListener('click', async () => {
-    if(!confirm('Isso vai apagar todas as fases e cards do quadro. Deseja continuar?')) return;
-    for(const p of state.phases){ await storageDelete('cards:'+p.id); }
+    if(!confirm('Isso vai apagar todas as fases e cards do quadro (o conteúdo salvo na pasta local também será substituído). Deseja continuar?')) return;
     state.title = 'Quadro Criativo';
-    state.phases = DEFAULT_PHASES.map(p => ({...p}));
-    state.activePhase = state.phases[0].id;
-    cardsCache = {};
+    state.details = '';
+    freshPhases();
     selectedCardId = null;
     await saveMeta();
     $('#boardTitle').textContent = state.title;
@@ -827,7 +1139,6 @@
         e.stopPropagation();
         if(state.phases.length <= 1){ alert('É preciso manter ao menos uma fase.'); return; }
         if(!confirm(`Excluir a fase "${phase.name}" e todos os cards nela?`)) return;
-        await storageDelete('cards:'+phase.id);
         delete cardsCache[phase.id];
         state.phases = state.phases.filter(p => p.id !== phase.id);
         if(state.activePhase === phase.id){
@@ -976,8 +1287,8 @@
     const base = { id: uid(), type, title: '', x: pos.x, y: pos.y, w: null, h: null, color: null };
     let content = {};
     if(type === 'note') content = {text:''};
-    if(type === 'image') content = {url:'', caption:''};
-    if(type === 'video') content = {url:'', caption:''};
+    if(type === 'image') content = {url:'', fileName:'', mimeType:'', caption:''};
+    if(type === 'video') content = {url:'', fileName:'', mimeType:'', caption:''};
     if(type === 'date') content = {date:'', label:''};
     if(type === 'checklist') content = {items:[{id:uid(), text:'', done:false}]};
     if(type === 'link') content = {url:'', label:''};
@@ -1172,7 +1483,51 @@
 
   function buildMediaBody(wrap, card, kind){
     const c = card.content;
-    if(!c.url){
+
+    // Nenhuma mídia definida ainda: oferece upload de arquivo local (salvo na pasta do projeto) OU URL
+    if(!c.url && !c.fileName){
+      const uploadRow = document.createElement('div');
+      uploadRow.className = 'media-url-row';
+      const uploadBtn = document.createElement('button');
+      uploadBtn.className = 'field-btn';
+      uploadBtn.style.flex = '1';
+      uploadBtn.textContent = kind === 'image' ? '📁 Enviar imagem do computador' : '📁 Enviar vídeo/áudio do computador';
+      const fileInput = document.createElement('input');
+      fileInput.type = 'file';
+      fileInput.style.display = 'none';
+      fileInput.accept = kind === 'image' ? 'image/*' : 'video/*,audio/*';
+      uploadBtn.addEventListener('click', () => {
+        if(!dirHandle){ alert('Nenhuma pasta de projeto está ativa.'); return; }
+        fileInput.click();
+      });
+      fileInput.addEventListener('change', async () => {
+        const file = fileInput.files && fileInput.files[0];
+        fileInput.value = '';
+        if(!file) return;
+        uploadBtn.disabled = true;
+        uploadBtn.textContent = 'Salvando na pasta local...';
+        try{
+          const saved = await saveMediaFile(file);
+          c.fileName = saved.fileName;
+          c.mimeType = saved.mimeType;
+          c.url = '';
+          await saveCards(state.activePhase);
+          refreshCardBody(card);
+        }catch(err){
+          alert('Não foi possível salvar o arquivo na pasta local. Tente novamente.');
+          uploadBtn.disabled = false;
+          uploadBtn.textContent = kind === 'image' ? '📁 Enviar imagem do computador' : '📁 Enviar vídeo/áudio do computador';
+        }
+      });
+      uploadRow.appendChild(uploadBtn);
+      uploadRow.appendChild(fileInput);
+      wrap.appendChild(uploadRow);
+
+      const orDiv = document.createElement('div');
+      orDiv.style.cssText = 'font-family:var(--font-mono);font-size:9.5px;color:var(--text-faint);text-align:center;margin:6px 0;letter-spacing:.08em;';
+      orDiv.textContent = 'OU';
+      wrap.appendChild(orDiv);
+
       const row = document.createElement('div');
       row.className = 'media-url-row';
       const input = document.createElement('input');
@@ -1185,6 +1540,7 @@
         const v = input.value.trim();
         if(!v) return;
         c.url = v;
+        c.fileName = '';
         await saveCards(state.activePhase);
         refreshCardBody(card);
       };
@@ -1195,7 +1551,41 @@
       return;
     }
 
-    if(kind === 'image'){
+    // Arquivo salvo localmente na pasta "midia" do projeto
+    if(c.fileName){
+      const isAudio = (c.mimeType || '').startsWith('audio/');
+      const frame = document.createElement('div');
+      frame.className = 'media-frame';
+      const loading = document.createElement('div');
+      loading.className = 'media-fallback';
+      loading.textContent = 'Carregando da pasta local...';
+      frame.appendChild(loading);
+      wrap.appendChild(frame);
+
+      getMediaObjectURL(c.fileName).then(objUrl => {
+        frame.innerHTML = '';
+        let el;
+        if(kind === 'image'){
+          el = document.createElement('img');
+          el.src = objUrl;
+          el.alt = card.title || 'imagem';
+        } else if(isAudio){
+          el = document.createElement('audio');
+          el.controls = true;
+          el.src = objUrl;
+          el.style.width = '100%';
+        } else {
+          el = document.createElement('video');
+          el.controls = true;
+          el.src = objUrl;
+          el.style.width = '100%';
+        }
+        frame.appendChild(el);
+      }).catch(() => {
+        frame.innerHTML = '';
+        frame.appendChild(buildFallback('#', 'Arquivo não encontrado na pasta local (' + c.fileName + ')'));
+      });
+    } else if(kind === 'image'){
       const frame = document.createElement('div');
       frame.className = 'media-frame';
       const img = document.createElement('img');
@@ -1236,9 +1626,11 @@
 
     const editLink = document.createElement('div');
     editLink.className = 'media-edit-link';
-    editLink.textContent = 'trocar url';
+    editLink.textContent = c.fileName ? 'trocar arquivo' : 'trocar url';
     editLink.addEventListener('click', async () => {
       c.url = '';
+      c.fileName = '';
+      c.mimeType = '';
       await saveCards(state.activePhase);
       refreshCardBody(card);
     });
@@ -1706,7 +2098,7 @@
     }
   }
 
-  function renderPrintCard(card, width){
+  async function renderPrintCard(card, width){
     const el = document.createElement('div');
     el.className = 'print-card';
     el.style.borderLeftColor = cardAccentColor(card);
@@ -1730,13 +2122,19 @@
     if(card.type === 'note'){
       body.textContent = c.text || '';
     } else if(card.type === 'image'){
-      if(c.url){ const img = document.createElement('img'); img.className='pc-img'; img.src = c.url; body.appendChild(img); }
+      if(c.fileName){
+        try{
+          const objUrl = await getMediaObjectURL(c.fileName);
+          const img = document.createElement('img'); img.className='pc-img'; img.src = objUrl; body.appendChild(img);
+        }catch(e){ body.textContent = '(arquivo local não encontrado)'; }
+      } else if(c.url){ const img = document.createElement('img'); img.className='pc-img'; img.src = c.url; body.appendChild(img); }
       else { body.textContent = '(sem imagem)'; }
       if(c.caption){ const cap = document.createElement('div'); cap.className='pc-caption'; cap.textContent = c.caption; body.appendChild(cap); }
     } else if(card.type === 'video'){
       const box = document.createElement('div'); box.className = 'pc-linkbox';
-      const dom = document.createElement('div'); dom.className='pc-domain'; dom.textContent = c.url ? domainOf(c.url) : '';
-      const u = document.createElement('div'); u.textContent = c.url || '(sem link)';
+      const label = c.fileName ? ('Arquivo local: ' + c.fileName) : (c.url || '(sem link)');
+      const dom = document.createElement('div'); dom.className='pc-domain'; dom.textContent = c.fileName ? (c.mimeType || 'arquivo local') : (c.url ? domainOf(c.url) : '');
+      const u = document.createElement('div'); u.textContent = label;
       box.appendChild(dom); box.appendChild(u);
       body.appendChild(box);
       if(c.caption){ const cap = document.createElement('div'); cap.className='pc-caption'; cap.textContent = c.caption; body.appendChild(cap); }
@@ -1777,7 +2175,8 @@
     sub.textContent = `${state.phases.length} fase(s) — impresso em ${new Date().toLocaleDateString('pt-BR')}`;
     container.appendChild(sub);
 
-    state.phases.forEach((phase, idx) => {
+    for(let idx = 0; idx < state.phases.length; idx++){
+      const phase = state.phases[idx];
       const cards = cardsCache[phase.id] || [];
       const section = document.createElement('div');
       section.className = 'print-phase';
@@ -1811,17 +2210,17 @@
         const pad = 50;
         boardDiv.style.width = (maxX - minX + pad*2) + 'px';
         boardDiv.style.height = (maxY - minY + pad*2) + 'px';
-        dims.forEach(d => {
-          const cardEl = renderPrintCard(d.c, d.w);
+        for(const d of dims){
+          const cardEl = await renderPrintCard(d.c, d.w);
           cardEl.style.left = (d.c.x - minX + pad) + 'px';
           cardEl.style.top = (d.c.y - minY + pad) + 'px';
           if(d.c.h) cardEl.style.height = d.h + 'px';
           boardDiv.appendChild(cardEl);
-        });
+        }
       }
       section.appendChild(boardDiv);
       container.appendChild(section);
-    });
+    }
 
     window.print();
   }
@@ -1875,12 +2274,10 @@
       alert('Esse arquivo não parece ser um quadro válido.');
       return;
     }
-    if(!confirm('Abrir este arquivo vai substituir o quadro atual pelas configurações salvas nele. Deseja continuar?')) return;
-
-    const oldPhases = state.phases;
-    for(const p of oldPhases){ await storageDelete('cards:'+p.id); }
+    if(!confirm('Abrir este arquivo vai substituir o quadro atual pelas configurações salvas nele (a pasta local do projeto continua sendo esta). Deseja continuar?')) return;
 
     state.title = data.title || 'Quadro Criativo';
+    state.details = data.details || state.details || '';
     state.phases = data.phases.map(p => ({ id: p.id || ('p'+uid()), name: p.name || 'Fase' }));
     if(state.phases.length === 0){
       state.phases = DEFAULT_PHASES.map(p => ({...p}));
@@ -1895,9 +2292,8 @@
     for(const p of state.phases){
       const arr = (data.cards && Array.isArray(data.cards[p.id])) ? data.cards[p.id] : [];
       cardsCache[p.id] = arr;
-      await saveCards(p.id);
     }
-    await saveMeta();
+    await writeBoardFile();
 
     $('#boardTitle').textContent = state.title;
     renderPhaseBar();
@@ -1912,7 +2308,7 @@
     e.target.value = '';
   });
 
-  init();
+  boot();
 })();
 </script>
 </body>
