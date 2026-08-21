@@ -785,13 +785,22 @@
     return (s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   }
 
-  // ---------------- ARMAZENAMENTO LOCAL (pasta no computador do usuário, sem banco de dados) ----------------
+  // ---------------- ARMAZENAMENTO LOCAL (sem banco de dados remoto) ----------------
+  // Modo 'fs'  = pasta real vinculada no computador (File System Access API — só Chrome/Edge, fora de iframes)
+  // Modo 'idb' = fallback: o quadro fica salvo no próprio navegador (IndexedDB), 100% local ao computador do usuário.
+  //              Nesse modo os botões "Baixar" / "Abrir" servem de backup manual em arquivo.
   const IDB_NAME = 'quadro-criativo-fs';
   const IDB_STORE = 'handles';
   const BOARD_FILENAME = 'quadro-criativo.json';
 
-  let dirHandle = null;      // FileSystemDirectoryHandle da pasta do projeto escolhida pelo usuário
-  let writeQueue = Promise.resolve(); // serializa gravações no arquivo local
+  let dirHandle = null;       // FileSystemDirectoryHandle da pasta do projeto (modo 'fs')
+  let storageMode = null;     // 'fs' | 'idb'
+  let writeQueue = Promise.resolve(); // serializa gravações no arquivo/registro local
+
+  function fsApiAvailable(){
+    // Além de existir, precisa poder ser chamada (não fica disponível dentro de alguns iframes/pré-visualizações)
+    return typeof window.showDirectoryPicker === 'function' && window.self === window.top;
+  }
 
   function openHandleDB(){
     return new Promise((resolve, reject) => {
@@ -838,20 +847,8 @@
     return false;
   }
 
-  async function readBoardFile(){
-    try{
-      const fh = await dirHandle.getFileHandle(BOARD_FILENAME);
-      const file = await fh.getFile();
-      const text = await file.text();
-      return JSON.parse(text);
-    }catch(e){ return null; }
-  }
-
-  async function writeBoardFileNow(){
-    if(!dirHandle) return;
-    const fh = await dirHandle.getFileHandle(BOARD_FILENAME, {create:true});
-    const writable = await fh.createWritable();
-    const data = {
+  function buildBoardData(){
+    return {
       app: 'quadro-criativo',
       version: 1,
       savedAt: new Date().toISOString(),
@@ -864,12 +861,39 @@
         return acc;
       }, {})
     };
-    await writable.write(JSON.stringify(data, null, 2));
-    await writable.close();
   }
-  // Serializa as gravações para evitar duas escritas simultâneas no mesmo arquivo
+
+  async function readBoardFile(){
+    try{
+      if(storageMode === 'fs'){
+        const fh = await dirHandle.getFileHandle(BOARD_FILENAME);
+        const file = await fh.getFile();
+        const text = await file.text();
+        return JSON.parse(text);
+      }
+      if(storageMode === 'idb'){
+        return await idbGet('boardData');
+      }
+    }catch(e){ return null; }
+    return null;
+  }
+
+  async function writeBoardFileNow(){
+    const data = buildBoardData();
+    try{
+      if(storageMode === 'fs' && dirHandle){
+        const fh = await dirHandle.getFileHandle(BOARD_FILENAME, {create:true});
+        const writable = await fh.createWritable();
+        await writable.write(JSON.stringify(data, null, 2));
+        await writable.close();
+      } else if(storageMode === 'idb'){
+        await idbSet('boardData', data);
+      }
+    }catch(err){ console.error('Falha ao salvar localmente', err); }
+  }
+  // Serializa as gravações para evitar duas escritas simultâneas
   function writeBoardFile(){
-    writeQueue = writeQueue.then(writeBoardFileNow).catch(err => console.error('Falha ao salvar na pasta local', err));
+    writeQueue = writeQueue.then(writeBoardFileNow).catch(err => console.error('Falha ao salvar localmente', err));
     return writeQueue;
   }
 
@@ -901,7 +925,10 @@
   async function startApp(){
     $('#boardTitle').textContent = state.title;
     const eyebrow = $('#projectEyebrow');
-    if(eyebrow) eyebrow.title = state.details ? ('Detalhes do projeto: ' + state.details) : 'Nenhum detalhe adicionado ao projeto.';
+    if(eyebrow){
+      eyebrow.textContent = storageMode === 'fs' ? 'Painel de produção criativa · 📁 salvando na pasta local' : 'Painel de produção criativa · 💾 salvando neste navegador';
+      eyebrow.title = state.details ? ('Detalhes do projeto: ' + state.details) : 'Nenhum detalhe adicionado ao projeto.';
+    }
     await loadCards(state.activePhase);
     renderPhaseBar();
     renderCanvas();
@@ -920,30 +947,13 @@
     overlay.innerHTML = '';
   }
 
-  function renderUnsupportedModal(){
-    showOverlay(`
-      <div class="startup-modal">
-        <div class="startup-eyebrow">Quadro Criativo</div>
-        <div class="startup-title">Navegador não suportado</div>
-        <div class="startup-desc">
-          Para salvar tudo localmente numa pasta do seu computador (sem usar nenhum banco de dados),
-          este quadro precisa de um navegador com suporte ao acesso ao sistema de arquivos —
-          como <b>Google Chrome</b> ou <b>Microsoft Edge</b> (versões recentes, em um site com https:// ou localhost).
-        </div>
-        <div class="startup-actions">
-          <button class="startup-btn primary" id="btnRetrySupport">Tentar novamente</button>
-        </div>
-      </div>
-    `);
-    document.getElementById('btnRetrySupport').addEventListener('click', boot);
-  }
-
   function renderNewProjectModal(prefill){
+    const canUseFs = fsApiAvailable();
     showOverlay(`
       <div class="startup-modal">
         <div class="startup-eyebrow">Quadro Criativo</div>
         <div class="startup-title">Iniciar novo projeto</div>
-        <div class="startup-desc">Dê um nome ao projeto e escolha (ou crie) uma pasta no seu computador. As informações do quadro (fases, notas, checklists, links etc.) serão salvas automaticamente nessa pasta, no seu próprio computador.</div>
+        <div class="startup-desc">Dê um nome ao projeto e conte um pouco sobre ele. As informações do quadro (fases, notas, checklists, links etc.) ficam salvas localmente, no seu computador — sem nuvem e sem banco de dados.</div>
         <div class="startup-field">
           <label for="spName">Nome do projeto</label>
           <input type="text" id="spName" placeholder="Ex.: Comercial de Verão 2026" value="${escapeHtml(prefill && prefill.name || '')}">
@@ -952,10 +962,14 @@
           <label for="spDetails">Detalhes</label>
           <textarea id="spDetails" placeholder="Breve descrição, briefing, contexto do projeto...">${escapeHtml(prefill && prefill.details || '')}</textarea>
         </div>
-        <div class="startup-note">📁 Ao clicar em "Iniciar projeto", o navegador vai pedir para você <b>selecionar ou criar uma pasta</b>. Autorize o acesso — é nela que o quadro será salvo, localmente, sem nuvem e sem banco de dados.</div>
+        ${canUseFs ? `
+        <div class="startup-note">📁 Ao clicar em "Iniciar projeto", o navegador vai pedir para você <b>selecionar ou criar uma pasta</b>. Autorize o acesso — é nela que o quadro será salvo automaticamente. Se preferir não vincular uma pasta agora, clique em "cancelar" na janela do navegador e o quadro salvará aqui mesmo, no navegador.</div>
+        ` : `
+        <div class="startup-note">💾 Este navegador (ou esta janela de pré-visualização) não permite vincular uma pasta diretamente. Sem problema: o quadro será salvo automaticamente <b>neste navegador</b>. Para ter uma cópia em arquivo, use os botões <b>"⇩ Baixar"</b> (salvar cópia) e <b>"⇧ Abrir"</b> (restaurar cópia) no topo da tela. Para vincular uma pasta de verdade, abra este arquivo .html diretamente numa aba do <b>Chrome</b> ou <b>Edge</b> (não dentro de uma pré-visualização).</div>
+        `}
         <div class="startup-note">💡 <b>Dica:</b> para imagens, vídeos e áudios, o quadro usa apenas <b>links</b> (não faz upload de arquivos). Suba seus arquivos para o <b>Google Drive</b>, <b>Dropbox</b> ou qualquer outro serviço, gere um link de compartilhamento e cole esse link no card. Também funciona com qualquer link já existente na internet (YouTube, Vimeo, sites, etc.).</div>
-        <div class="startup-note">⚠️ Este é um sistema <b>Beta gratuito</b> e não usa banco de dados: tudo fica salvo apenas na pasta local que você escolher. A responsabilidade por manter seus arquivos e links acessíveis é sua — evite apagar ou mover a pasta do projeto.</div>
-        <div class="startup-error" id="spError">Não foi possível acessar a pasta. Tente novamente.</div>
+        <div class="startup-note">⚠️ Este é um sistema <b>Beta gratuito</b> e não usa banco de dados: tudo fica salvo apenas localmente. A responsabilidade por manter seus arquivos, links e cópias de backup é sua.</div>
+        <div class="startup-error" id="spError">Não foi possível salvar localmente. Tente novamente.</div>
         <div class="startup-actions">
           <button class="startup-btn primary" id="spStart">Iniciar projeto</button>
         </div>
@@ -970,13 +984,33 @@
       const details = document.getElementById('spDetails').value.trim();
       errEl.classList.remove('show');
       startBtn.disabled = true;
-      startBtn.textContent = 'Aguardando pasta...';
+
+      let usedFs = false;
+      if(canUseFs){
+        startBtn.textContent = 'Aguardando pasta...';
+        try{
+          const handle = await window.showDirectoryPicker({ mode: 'readwrite' });
+          const ok = await verifyPermission(handle, 'readwrite');
+          if(!ok) throw new Error('permissão negada');
+          dirHandle = handle;
+          storageMode = 'fs';
+          await idbSet('storageMode', 'fs');
+          await idbSet('projectDirHandle', dirHandle);
+          usedFs = true;
+        }catch(err){
+          // usuário cancelou a escolha da pasta, ou a permissão foi negada — segue no modo navegador
+          dirHandle = null;
+          storageMode = 'idb';
+        }
+      } else {
+        storageMode = 'idb';
+      }
+
       try{
-        const handle = await window.showDirectoryPicker({ mode: 'readwrite' });
-        const ok = await verifyPermission(handle, 'readwrite');
-        if(!ok) throw new Error('permissão negada');
-        dirHandle = handle;
-        await idbSet('projectDirHandle', dirHandle);
+        if(!usedFs){
+          await idbSet('storageMode', 'idb');
+          await idbDelete('projectDirHandle');
+        }
         await idbSet('projectInfo', { name, details });
         state.title = name;
         state.details = details;
@@ -985,29 +1019,27 @@
         hideOverlay();
         await startApp();
       }catch(err){
-        // usuário cancelou a escolha da pasta, ou a permissão foi negada
         startBtn.disabled = false;
         startBtn.textContent = 'Iniciar projeto';
-        if(err && err.name !== 'AbortError'){
-          errEl.classList.add('show');
-        }
+        errEl.classList.add('show');
       }
     });
   }
 
   function renderContinueModal(info){
+    const modeLabel = storageMode === 'fs' ? 'uma pasta local' : 'este navegador';
     showOverlay(`
       <div class="startup-modal">
         <div class="startup-eyebrow">Quadro Criativo</div>
         <div class="startup-title">Continuar projeto</div>
         <div class="startup-project-name">${escapeHtml(info && info.name || 'Quadro Criativo')}</div>
         ${info && info.details ? `<div class="startup-project-details">${escapeHtml(info.details)}</div>` : ''}
-        <div class="startup-desc">Este quadro já está vinculado a uma pasta local. Conceda acesso a ela novamente para continuar de onde você parou, ou comece um novo projeto em outra pasta.</div>
+        <div class="startup-desc">Este quadro já está salvo em ${modeLabel}. ${storageMode === 'fs' ? 'Conceda acesso à pasta novamente para continuar de onde você parou.' : 'Clique em continuar para retomar de onde você parou.'} Ou comece um novo projeto.</div>
         <div class="startup-note">💡 Lembrete: imagens, vídeos e áudios funcionam por <b>link</b> (Google Drive, Dropbox ou qualquer outro). Como este é um sistema Beta gratuito sem banco de dados, manter esses links e arquivos acessíveis é por sua conta.</div>
-        <div class="startup-error" id="cpError">Não foi possível acessar essa pasta (ela pode ter sido movida, renomeada ou apagada).</div>
+        <div class="startup-error" id="cpError">${storageMode === 'fs' ? 'Não foi possível acessar essa pasta (ela pode ter sido movida, renomeada ou apagada).' : 'Não foi possível recuperar os dados salvos neste navegador.'}</div>
         <div class="startup-actions">
           <button class="startup-btn ghost" id="cpNew">Novo projeto</button>
-          <button class="startup-btn primary" id="cpContinue">Conceder acesso e continuar</button>
+          <button class="startup-btn primary" id="cpContinue">${storageMode === 'fs' ? 'Conceder acesso e continuar' : 'Continuar'}</button>
         </div>
       </div>
     `);
@@ -1015,14 +1047,18 @@
     document.getElementById('cpNew').addEventListener('click', async () => {
       await idbDelete('projectDirHandle');
       await idbDelete('projectInfo');
+      await idbDelete('storageMode');
       dirHandle = null;
+      storageMode = null;
       renderNewProjectModal(info);
     });
     document.getElementById('cpContinue').addEventListener('click', async () => {
       errEl.classList.remove('show');
       try{
-        const ok = await verifyPermission(dirHandle, 'readwrite');
-        if(!ok) throw new Error('permissão negada');
+        if(storageMode === 'fs'){
+          const ok = await verifyPermission(dirHandle, 'readwrite');
+          if(!ok) throw new Error('permissão negada');
+        }
         const data = await readBoardFile();
         if(data && Array.isArray(data.phases) && data.phases.length){
           state.title = data.title || (info && info.name) || 'Quadro Criativo';
@@ -1046,18 +1082,23 @@
   }
 
   async function boot(){
-    if(!window.showDirectoryPicker){
-      renderUnsupportedModal();
+    const savedMode = await idbGet('storageMode').catch(() => null);
+    const savedInfo = await idbGet('projectInfo').catch(() => null);
+
+    if(savedMode === 'fs'){
+      const savedHandle = await idbGet('projectDirHandle').catch(() => null);
+      if(savedHandle){
+        dirHandle = savedHandle;
+        storageMode = 'fs';
+        renderContinueModal(savedInfo);
+        return;
+      }
+    } else if(savedMode === 'idb' && savedInfo){
+      storageMode = 'idb';
+      renderContinueModal(savedInfo);
       return;
     }
-    const savedHandle = await idbGet('projectDirHandle').catch(() => null);
-    const savedInfo = await idbGet('projectInfo').catch(() => null);
-    if(savedHandle){
-      dirHandle = savedHandle;
-      renderContinueModal(savedInfo);
-    } else {
-      renderNewProjectModal(null);
-    }
+    renderNewProjectModal(null);
   }
 
   // ---------------- BOARD TITLE ----------------
