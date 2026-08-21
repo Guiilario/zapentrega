@@ -630,29 +630,33 @@
     backdrop-filter:blur(3px);
     display:flex; align-items:center; justify-content:center;
     padding:20px;
+    box-sizing:border-box;
   }
   #startupOverlay.hidden{display:none;}
   .startup-modal{
     width:100%; max-width:440px;
+    max-height:calc(100vh - 40px);
+    overflow-y:auto;
     background:var(--panel);
     border:1px solid var(--panel-border);
     border-radius:14px;
-    padding:28px 26px 24px;
+    padding:24px 22px 22px;
     box-shadow:0 20px 60px rgba(0,0,0,0.45);
     font-family:var(--font-body);
+    box-sizing:border-box;
   }
   .startup-eyebrow{
     font-family:var(--font-mono); font-size:10.5px; letter-spacing:.14em;
     color:var(--text-faint); text-transform:uppercase; margin-bottom:6px;
   }
   .startup-title{
-    font-family:var(--font-display); font-weight:600; font-size:22px;
+    font-family:var(--font-display); font-weight:600; font-size:20px;
     color:var(--text-hi); margin-bottom:8px;
   }
   .startup-desc{
-    font-size:13px; line-height:1.5; color:var(--text-lo); margin-bottom:20px;
+    font-size:12.5px; line-height:1.5; color:var(--text-lo); margin-bottom:16px;
   }
-  .startup-field{margin-bottom:14px;}
+  .startup-field{margin-bottom:12px;}
   .startup-field label{
     display:block; font-size:11.5px; font-weight:600; color:var(--text-lo);
     margin-bottom:6px;
@@ -661,14 +665,17 @@
     width:100%; background:var(--bg-2); border:1px solid var(--panel-border);
     border-radius:8px; color:var(--text-hi); font-family:var(--font-body);
     font-size:13.5px; padding:9px 11px; outline:none; resize:vertical;
+    box-sizing:border-box;
   }
   .startup-field input:focus, .startup-field textarea:focus{border-color:var(--accent);}
-  .startup-field textarea{min-height:70px;}
+  .startup-field textarea{min-height:60px;}
   .startup-note{
-    display:flex; gap:8px; font-size:11.5px; line-height:1.5; color:var(--text-faint);
+    display:flex; align-items:flex-start; gap:8px; font-size:11.5px; line-height:1.5; color:var(--text-faint);
     background:var(--bg-2); border:1px solid var(--panel-border); border-radius:8px;
-    padding:10px 11px; margin-bottom:18px;
+    padding:10px 11px; margin-bottom:12px;
   }
+  .startup-note .note-icon{flex:0 0 auto;}
+  .startup-note .note-text{flex:1 1 auto; min-width:0; overflow-wrap:break-word; word-break:break-word;}
   .startup-actions{display:flex; gap:10px; justify-content:flex-end; flex-wrap:wrap;}
   .startup-btn{
     font-family:var(--font-body); font-size:13px; font-weight:600;
@@ -686,10 +693,15 @@
   .startup-error.show{display:block;}
   .startup-project-name{
     font-family:var(--font-display); font-weight:600; font-size:17px; color:var(--text-hi);
-    margin-bottom:4px;
+    margin-bottom:4px; overflow-wrap:break-word;
   }
   .startup-project-details{
-    font-size:12.5px; color:var(--text-lo); margin-bottom:18px; white-space:pre-wrap;
+    font-size:12.5px; color:var(--text-lo); margin-bottom:18px; white-space:pre-wrap; overflow-wrap:break-word;
+  }
+  @media (max-width: 480px){
+    #startupOverlay{padding:10px;}
+    .startup-modal{max-height:calc(100vh - 20px); padding:20px 16px 16px;}
+    .startup-title{font-size:18px;}
   }
 </style>
 </head>
@@ -963,12 +975,12 @@
           <textarea id="spDetails" placeholder="Breve descrição, briefing, contexto do projeto...">${escapeHtml(prefill && prefill.details || '')}</textarea>
         </div>
         ${canUseFs ? `
-        <div class="startup-note">📁 Ao clicar em "Iniciar projeto", o navegador vai pedir para você <b>selecionar ou criar uma pasta</b>. Autorize o acesso — é nela que o quadro será salvo automaticamente. Se preferir não vincular uma pasta agora, clique em "cancelar" na janela do navegador e o quadro salvará aqui mesmo, no navegador.</div>
+        <div class="startup-note"><span class="note-icon">📁</span><span class="note-text">Ao clicar em "Iniciar projeto", o navegador vai pedir para você <b>selecionar ou criar uma pasta</b>. Autorize o acesso — é nela que o quadro será salvo automaticamente. Se preferir não vincular uma pasta agora, clique em "cancelar" na janela do navegador e o quadro salvará aqui mesmo, no navegador.</span></div>
         ` : `
-        <div class="startup-note">💾 Este navegador (ou esta janela de pré-visualização) não permite vincular uma pasta diretamente. Sem problema: o quadro será salvo automaticamente <b>neste navegador</b>. Para ter uma cópia em arquivo, use os botões <b>"⇩ Baixar"</b> (salvar cópia) e <b>"⇧ Abrir"</b> (restaurar cópia) no topo da tela. Para vincular uma pasta de verdade, abra este arquivo .html diretamente numa aba do <b>Chrome</b> ou <b>Edge</b> (não dentro de uma pré-visualização).</div>
+        <div class="startup-note"><span class="note-icon">💾</span><span class="note-text">Este navegador (ou esta janela de pré-visualização) não permite vincular uma pasta diretamente. Sem problema: o quadro será salvo automaticamente <b>neste navegador</b>. Para ter uma cópia em arquivo, use os botões <b>"⇩ Baixar"</b> (salvar cópia) e <b>"⇧ Abrir"</b> (restaurar cópia) no topo da tela. Para vincular uma pasta de verdade, abra este arquivo .html diretamente numa aba do <b>Chrome</b> ou <b>Edge</b> (não dentro de uma pré-visualização).</span></div>
         `}
-        <div class="startup-note">💡 <b>Dica:</b> para imagens, vídeos e áudios, o quadro usa apenas <b>links</b> (não faz upload de arquivos). Suba seus arquivos para o <b>Google Drive</b>, <b>Dropbox</b> ou qualquer outro serviço, gere um link de compartilhamento e cole esse link no card. Também funciona com qualquer link já existente na internet (YouTube, Vimeo, sites, etc.).</div>
-        <div class="startup-note">⚠️ Este é um sistema <b>Beta gratuito</b> e não usa banco de dados: tudo fica salvo apenas localmente. A responsabilidade por manter seus arquivos, links e cópias de backup é sua.</div>
+        <div class="startup-note"><span class="note-icon">💡</span><span class="note-text"><b>Dica:</b> para imagens, vídeos e áudios, o quadro usa apenas <b>links</b> (não faz upload de arquivos). Suba seus arquivos para o <b>Google Drive</b>, <b>Dropbox</b> ou qualquer outro serviço, gere um link de compartilhamento e cole esse link no card. Também funciona com qualquer link já existente na internet (YouTube, Vimeo, sites, etc.).</span></div>
+        <div class="startup-note"><span class="note-icon">⚠️</span><span class="note-text">Este é um sistema <b>Beta gratuito</b> e não usa banco de dados: tudo fica salvo apenas localmente. A responsabilidade por manter seus arquivos, links e cópias de backup é sua.</span></div>
         <div class="startup-error" id="spError">Não foi possível salvar localmente. Tente novamente.</div>
         <div class="startup-actions">
           <button class="startup-btn primary" id="spStart">Iniciar projeto</button>
@@ -1035,7 +1047,7 @@
         <div class="startup-project-name">${escapeHtml(info && info.name || 'Quadro Criativo')}</div>
         ${info && info.details ? `<div class="startup-project-details">${escapeHtml(info.details)}</div>` : ''}
         <div class="startup-desc">Este quadro já está salvo em ${modeLabel}. ${storageMode === 'fs' ? 'Conceda acesso à pasta novamente para continuar de onde você parou.' : 'Clique em continuar para retomar de onde você parou.'} Ou comece um novo projeto.</div>
-        <div class="startup-note">💡 Lembrete: imagens, vídeos e áudios funcionam por <b>link</b> (Google Drive, Dropbox ou qualquer outro). Como este é um sistema Beta gratuito sem banco de dados, manter esses links e arquivos acessíveis é por sua conta.</div>
+        <div class="startup-note"><span class="note-icon">💡</span><span class="note-text">Lembrete: imagens, vídeos e áudios funcionam por <b>link</b> (Google Drive, Dropbox ou qualquer outro). Como este é um sistema Beta gratuito sem banco de dados, manter esses links e arquivos acessíveis é por sua conta.</span></div>
         <div class="startup-error" id="cpError">${storageMode === 'fs' ? 'Não foi possível acessar essa pasta (ela pode ter sido movida, renomeada ou apagada).' : 'Não foi possível recuperar os dados salvos neste navegador.'}</div>
         <div class="startup-actions">
           <button class="startup-btn ghost" id="cpNew">Novo projeto</button>
